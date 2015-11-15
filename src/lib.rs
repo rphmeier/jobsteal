@@ -349,6 +349,7 @@ pub fn make_pool(n_threads: usize) -> Option<JobSystem> {
             queue: queues.last().unwrap().clone(),
             siblings: queues,
         },
+        _marker: PhantomData,
     })
 }
 
