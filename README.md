@@ -18,7 +18,7 @@ fn main() {
     for i in 0..100 {
         // You can only submit jobs with a static lifetime this way.
         // It returns a RAII guard for joining.
-        let handle = pool.get_worker().submit(move || println!("Job {}", i));
+        let handle = pool.get_worker().submit(move |_| println!("Job {}", i));
 
         // move the handle out so we can spawn a new one while this one is
         // still queued up.
