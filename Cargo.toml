@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/rphmeier/jobsteal"
 
 
-keywords = ['fork-join', 'fork', 'join', 'job', 'system', 'threadpool', 'thread', 'pool']
+keywords = ['fork', 'join', 'job', 'threadpool', 'pool']
 
 [dependencies]
 rand = "0.3"
