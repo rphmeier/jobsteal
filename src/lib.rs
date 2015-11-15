@@ -180,6 +180,7 @@ pub struct JoinHandle<'a> {
 
 impl<'a> JoinHandle<'a> {
     /// Wait for this job to be finished.
+    /// This is identical to dropping the guard.
     pub fn wait(self) {
         drop(self);
     }
@@ -280,9 +281,13 @@ impl<'a> ChildHandle<'a> {
     }
 }
  
+/// The JobSystem holds a worker for the thread it exists on,
+/// as well as handles to all the other threads.
 pub struct JobSystem {
     handles: Vec<Sender<WorkerMessage>>,
     worker: Worker,
+    // to mark it !Send
+    _marker: PhantomData<*mut ()>,
 }
 
 impl JobSystem {
@@ -347,14 +352,17 @@ pub fn make_pool(n_threads: usize) -> Option<JobSystem> {
     })
 }
 
+// the main thread for each worker
 fn worker_main(worker: Worker, rx: Receiver<WorkerMessage>) {
     loop {
         // check for message
         match rx.try_recv() {
+            // time to stop!
             Ok(WorkerMessage::Stop) => {
                 break;
             }
 
+            // somehow the JobSystem got dropped without disconnecting.
             Err(TryRecvError::Disconnected) => {
                 break;
             }
@@ -362,6 +370,7 @@ fn worker_main(worker: Worker, rx: Receiver<WorkerMessage>) {
             _ => {}
         }
 
+        // run a job
         worker.run_job();
     }
 }
