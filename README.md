@@ -30,7 +30,7 @@ fn main() {
 ```
 
 ---
-Here's an example where we split up a vector into chunks and submit a job for every part.
+Here's a more useful example where we split up a vector into chunks and submit a job for every part. This makes use of the scoping feature. Scoped threads return a different kind of handle.
 ```rust
 use jobsteal::make_pool;
 
