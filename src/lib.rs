@@ -257,7 +257,6 @@ impl<'a, 'b> Drop for Scope<'a, 'b> {
 /// `wait()` until it's completed. They can also `release()`
 /// the guard to defer its completion to an arbitrary time
 /// within its lifetime.
-#[must_use]
 pub struct ChildHandle<'a> {
     job: *mut Job,
     worker: &'a Worker,
