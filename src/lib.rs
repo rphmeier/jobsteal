@@ -5,7 +5,7 @@
 
 use std::borrow::Borrow;
 use std::boxed::FnBox;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::mem;
@@ -209,7 +209,7 @@ impl<'a> Drop for JoinHandle<'a> {
 pub struct Scope<'a, 'b> {
     worker: &'a Worker,
     children: RefCell<Vec<Box<Job>>>,
-    _marker: PhantomData<Cell<&'b ()>>,
+    _marker: PhantomData<*mut &'b Job>,
 }
 
 impl<'a, 'b> Scope<'a, 'b>{
