@@ -2,6 +2,13 @@
 name = "jobsteal"
 version = "0.1.0"
 authors = ["rphmeier <rphmeier@gmail.com>"]
+description = "A work-stealing fork-join threadpool written in Rust."
+documentation = "https://rphmeier.github.io/jobsteal/"
+license = "MIT"
+repository = "https://github.com/rphmeier/jobsteal"
+
+
+keywords = ['fork-join', 'fork', 'join', 'job', 'system', 'threadpool', 'thread', 'pool']
 
 [dependencies]
 rand = "0.3"
