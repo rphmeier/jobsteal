@@ -384,12 +384,19 @@ mod tests {
     use super::*;
     
     #[test]
+    #[should_panic]
+    fn no_zero_thread_pool() {
+        make_pool(0).unwrap();
+    }
+
+    #[test]
     fn basic_spawning() {
         // four worker threads, including this one.
         let pool = make_pool(4).unwrap();
 
         for _ in 0..100 {
-            pool.submit(|_| println!("Hello!"));
+            // empty job
+            pool.submit(|_| {});
         }
     }
 
@@ -399,9 +406,39 @@ mod tests {
 
         pool.submit(|worker| {
             for _ in 0..100 {
-                worker.submit(|_| println!("Hello!"));
+                // empty job
+                worker.submit(|_| {});
             };
         }).wait().unwrap();
+    }
+
+    #[test]
+    fn panic_in_the_jobqueue() {
+        use std::any::Any;
+
+        let pool = make_pool(4).unwrap();
+
+        let mut handles = Vec::new();
+        for i in 0..100 {
+            // 4 threads, 20 panics.
+            let handle = pool.submit(move |_| match i % 5 {
+                0 => panic!(i),
+                _ => {}
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            match handle.wait() {
+                Ok(_) => {},
+                Err(b) => {
+                    let panic_val = b.downcast_ref::<i32>().unwrap();
+                    assert_eq!(panic_val % 5, 0);
+                }
+            }
+        }
+
     }
 
 /*    #[test]
