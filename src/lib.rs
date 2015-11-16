@@ -1,4 +1,4 @@
-#![feature(fnbox)]
+#![feature(catch_panic, fnbox)]
 
 //! Work-stealing job-queue implementation.
 //! Inspired by the Molecular Matters blog posts.
@@ -6,19 +6,17 @@
 extern crate crossbeam;
 extern crate rand;
 
-mod job_pool;
+use crossbeam::sync::TreiberStack;
 
-use std::borrow::Borrow;
+use std::any::Any;
 use std::boxed::FnBox;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender, Receiver, TryRecvError};
 use std::thread;
-
-use job_pool::{JobId, JobPool};
 
 use ::rand::thread_rng;
 use ::rand::distributions::{IndependentSample, Range};
@@ -29,6 +27,127 @@ enum WorkerMessage {
 }
 
 type Job = Box<FnBox(&Worker) + 'static + Send>;
+
+/// A job's id in the pool.
+pub struct JobId {
+    idx: usize,
+}
+
+struct PoolEntry {
+    job: Job,
+    sender: Sender<JobExitStatus>,
+}
+
+enum JobExitStatus {
+    Success,
+    Panic(Box<Any>),
+}
+
+/// A mostly lock-free pool allocator of jobs.
+/// It only locks when doubling the size of the vector.
+/// Eventually, I may implement a lock-free vector based off of
+/// Stroustroup-et-al's paper on the subject, but for now, I've 
+/// decided to "keep it simple, stupid".
+struct JobPool {
+    jobs: RwLock<Vec<RefCell<Option<PoolEntry>>>>,
+    unused: TreiberStack<usize>,
+}
+
+impl JobPool {
+    /// Initialize this pool with the given capacity.
+    fn with_capacity(size: usize) -> Self {
+        let mut v = Vec::with_capacity(size);
+        let unused = TreiberStack::new();
+
+        for i in (0..size).rev() {
+            v.push(RefCell::new(None));
+
+            unused.push(i);
+        }
+
+
+        JobPool {
+            jobs: RwLock::new(v),
+            unused: unused,
+        }
+    }
+
+    /// Submit a job to be allocated in the pool.
+    fn submit(&self, job: Job) -> (JobId, Receiver<JobExitStatus>) {
+        let next = if let Some(next) = self.unused.pop() {
+            next
+        } else {
+            self.double();
+            self.unused.pop().unwrap()
+        };
+
+        let jobs = match self.jobs.read() {
+            Ok(j) => j,
+            Err(p) => p.into_inner(),
+        };
+
+        let (tx, rx) = channel();
+
+        let entry = &jobs[next];
+        *entry.borrow_mut() = Some(PoolEntry {
+            job: job,
+            sender: tx,
+        });
+
+        (JobId { idx: next, }, rx)
+    }
+
+    // double the vector
+    fn double(&self) {
+        let mut jobs = match self.jobs.write() {
+            Ok(j) => j,
+            Err(p) => p.into_inner(),
+        };
+
+        let old_len = jobs.len();
+        let new_len = old_len * 2;
+
+        jobs.reserve(new_len);
+
+        for i in (old_len..new_len).rev() {
+            jobs.push(RefCell::new(None));
+
+            self.unused.push(i);
+        }
+    }
+
+    /// Get the job given by id. This function should
+    /// always yield Some if you use the id you are given.
+    fn run(&self, id: JobId, worker: &Worker) {
+        use std::mem;
+
+        let jobs = match self.jobs.read() {
+            Ok(j) => j,
+            Err(p) => p.into_inner(),
+        };
+
+        // take the job out before pushing the index back onto
+        // the unused stack.
+        let entry = jobs[id.idx].borrow_mut().take().unwrap();
+
+        let PoolEntry { job, sender } = entry;
+
+        let unbounded_fn: Box<FnBox() + Send> = Box::new(move || job.call_box((worker,)));
+        let bounded_fn: Box<FnBox() + 'static + Send> = unsafe { mem::transmute(unbounded_fn) };
+
+        let exit_status = match thread::catch_panic(|| bounded_fn()) {
+            Ok(_) => { JobExitStatus::Success }
+            Err(e) => { JobExitStatus::Panic(e) }
+        };
+
+        // We don't really care if they receive it or not.
+        let _result = sender.send(exit_status);
+        self.unused.push(id.idx);
+    }
+}
+
+unsafe impl Send for JobPool {}
+unsafe impl Sync for JobPool {}
 
 /// A thread-safe double-ended queue for jobs.
 /// Right now, it's just a dumb locking wrapper of VecDeque.
@@ -55,7 +174,7 @@ impl JobQueue {
         guard.pop_back()
     }
 
-    // steal a job from the public end of the queu.
+    // steal a job from the public end of the queue.
     fn steal(&self) -> Option<JobId> {
         let mut guard = match self.inner.lock() {
             Ok(g) => g,
@@ -87,14 +206,14 @@ pub struct Worker {
 }
 
 impl Worker {
-    fn submit<F: FnOnce(&Worker) + 'static + Send>(&self, f: F) -> JoinHandle {
+    pub fn submit<F: FnOnce(&Worker) + 'static + Send>(&self, f: F) -> JoinHandle {
         let job = Box::new(f);
-        let id = self.pool.submit(job);
-        self.queue.push(id.clone());
+        let (id, notifier) = self.pool.submit(job);
+        self.queue.push(id);
 
         JoinHandle {
-            id: id,
-            worker: self,
+            notifier: notifier,
+            worker: Some(self),
         }
     }
 
@@ -125,14 +244,31 @@ impl Worker {
 /// A JoinHandle can be used to manually wait for 
 /// a job to be completed.
 pub struct JoinHandle<'a> {
-    id: JobId,
-    worker: &'a Worker,
+    notifier: Receiver<JobExitStatus>,
+    worker: Option<&'a Worker>,
 }
 
 impl<'a> JoinHandle<'a> {
-    fn wait(self) {
-        while self.worker.pool.is_done(&self.id) {
-            self.worker.run_job();
+    fn wait(self) -> Result<(), Box<Any>> {
+        loop {
+            match self.notifier.try_recv() {
+                Ok(exit_status) => { 
+                    return match exit_status {
+                        JobExitStatus::Success => Ok(()),
+                        JobExitStatus::Panic(err) => Err(err),
+                    }
+                }
+
+                // sender _never_ hangs up before the job is done.
+                Err(TryRecvError::Disconnected) => unreachable!(),
+
+                // nothing yet, just do some more work.
+                _ => {
+                    if let &Some(ref worker) = &self.worker {
+                        worker.run_job()
+                    }
+                }
+            }
         }
     }
 }
@@ -143,7 +279,7 @@ pub struct JobSystem {
 }
 
 impl JobSystem {
-    fn get_worker(&self) -> &Worker {
+    pub fn get_worker(&self) -> &Worker {
         &self.worker
     }
 }
@@ -151,7 +287,9 @@ impl JobSystem {
 impl Drop for JobSystem {
     fn drop(&mut self) {
         for handle in &self.handles {
-            handle.send(WorkerMessage::Stop);
+            match handle.send(WorkerMessage::Stop) {
+                _ => {}
+            }
         }
     }
 }
