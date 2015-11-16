@@ -12,3 +12,4 @@ keywords = ['fork', 'join', 'job', 'threadpool', 'pool']
 
 [dependencies]
 rand = "0.3"
+crossbeam = "0.1.6"

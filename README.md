@@ -66,4 +66,4 @@ fn main(){
 
 ---
 ## Safety
-All handles should be (relatively) safe to leak. However, the code hasn't been vetted for safety. I would strongly recommend against leaking handles intentionally.
+All handles should be (relatively) safe to leak. However, the code hasn't been vetted for safety. I would strongly recommend against leaking handles intentionally. Additionally, the destructor for Scope isn't fully transactional yet and cannot necessarily resume while unwinding. Panic safety isn't perfect, so please avoid panics in your code for the time being.
