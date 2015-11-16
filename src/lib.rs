@@ -12,9 +12,7 @@ use std::any::Any;
 use std::boxed::FnBox;
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, RwLock};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender, Receiver, TryRecvError};
 use std::thread;
 
@@ -249,7 +247,7 @@ pub struct JoinHandle<'a> {
 }
 
 impl<'a> JoinHandle<'a> {
-    fn wait(self) -> Result<(), Box<Any>> {
+    pub fn wait(self) -> Result<(), Box<Any>> {
         loop {
             match self.notifier.try_recv() {
                 Ok(exit_status) => { 
@@ -365,8 +363,6 @@ fn worker_main(worker: Worker, rx: Receiver<WorkerMessage>) {
 
 #[cfg(test)]
 mod tests {
-    use std::thread;
-
     use super::*;
     
     #[test]
@@ -394,7 +390,7 @@ mod tests {
                 let handle = worker.submit(|_| println!("Hello!"));
                 jobs.push(handle);
             };
-        }).wait();
+        }).wait().unwrap();
     }
 
 /*    #[test]
