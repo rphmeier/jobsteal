@@ -12,20 +12,13 @@ fn main() {
     // This call will fail if you supply this function with '0'.
     let pool = make_pool(4).unwrap();
 
-    let mut handles = Vec::new();
-
     // spawn 100 jobs
     for i in 0..100 {
         // You can only submit jobs with a static lifetime this way.
-        // It returns a RAII guard for joining.
-        let handle = pool.get_worker().submit(move |_| println!("Job {}", i));
-
-        // move the handle out so we can spawn a new one while this one is
-        // still queued up.
-        handles.push(handle);
+        // It returns a RAII guard for force-waiting.
+        // If you just let it drop, you can do other things while you wait.
+        let handle = pool.submit(move |_| println!("Job {}", i));
     }
-
-    // all handles get dropped here, so it waits for every job to be done.
 }
 ```
 
@@ -41,7 +34,7 @@ fn main(){
     let mut v = vec![0; 256];
 
     // Create a scope object
-    pool.get_worker().scope(|scope| {
+    pool.scope(|scope| {
         for chunk in v.chunks_mut(32) {
 
             // Jobs spawned by the scope are only allowed to access

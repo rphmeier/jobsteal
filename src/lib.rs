@@ -237,6 +237,20 @@ impl Worker {
             self.pool.run(id, self);
         }
     }
+
+    // run this worker to completion.
+    fn run_to_completion(&self) {
+        while let Some(id) = self.queue.pop() {
+            self.pool.run(id, self);
+        }
+
+        // help run all the sibling queues to completion as well.
+        for sibling in self.siblings.iter() {
+            while let Some(id) = sibling.steal() {
+                self.pool.run(id, self);
+            }
+        }
+    }
 }
 
 /// A JoinHandle can be used to manually wait for 
@@ -273,12 +287,20 @@ impl<'a> JoinHandle<'a> {
 
 pub struct JobSystem {
     handles: Vec<Sender<WorkerMessage>>,
-    worker: Worker,
+    pool: Arc<JobPool>,
+    queue: Arc<JobQueue>,
 }
 
 impl JobSystem {
-    pub fn get_worker(&self) -> &Worker {
-        &self.worker
+    pub fn submit<F: FnOnce(&Worker) + 'static + Send>(&self, f: F) -> JoinHandle {
+        let job = Box::new(f);
+        let (id, notifier) = self.pool.submit(job);
+        self.queue.push(id);
+
+        JoinHandle {
+            notifier: notifier,
+            worker: None,
+        }
     }
 }
 
@@ -292,17 +314,17 @@ impl Drop for JobSystem {
     }
 }
 
-/// Create a new `JobSystem` with `n_threads` workers, including the
-/// current thread. This will fail if `n_threads` is 0.
+/// Create a new `JobSystem` with `n_threads` worker threads.
+/// This will fail if `n_threads` is less than 1.
 pub fn make_pool(n_threads: usize) -> Option<JobSystem> {
-    if n_threads == 0 {
+    if n_threads < 1 {
         return None;
     }
 
     let job_pool = Arc::new(JobPool::with_capacity(4096));
 
     // make a queue for every thread, including this one.
-    let queues: Vec<_> = (0..n_threads)
+    let queues: Vec<_> = (0..n_threads+1)
         .map(|_| Arc::new(JobQueue::new())).collect();
 
     let queues = queues.into_boxed_slice();
@@ -311,7 +333,7 @@ pub fn make_pool(n_threads: usize) -> Option<JobSystem> {
 
     // Spawn a worker thread for every queue but the last one, 
     // since that belongs to the thread this is spawned on.
-    for queue in queues.iter().cloned().take(queues.len() - 1) {
+    for queue in queues.iter().cloned().take(n_threads) {
         let (tx, rx) = channel();
         let siblings = queues.clone();
         let pool = job_pool.clone();
@@ -330,11 +352,8 @@ pub fn make_pool(n_threads: usize) -> Option<JobSystem> {
 
     Some(JobSystem {
         handles: handles,
-        worker: Worker {
-            pool: job_pool,
-            queue: queues.last().unwrap().clone(),
-            siblings: queues,
-        },
+        pool: job_pool,
+        queue: queues.last().unwrap().clone(),
     })
 }
 
@@ -345,17 +364,16 @@ fn worker_main(worker: Worker, rx: Receiver<WorkerMessage>) {
         match rx.try_recv() {
             // time to stop!
             Ok(WorkerMessage::Stop) => {
-                break;
+                worker.run_to_completion();
             }
 
             // somehow the JobSystem got dropped without disconnecting.
             Err(TryRecvError::Disconnected) => {
-                break;
+                worker.run_to_completion();
             }
 
             _ => {}
         }
-
         // run a job
         worker.run_job();
     }
@@ -369,26 +387,19 @@ mod tests {
     fn basic_spawning() {
         // four worker threads, including this one.
         let pool = make_pool(4).unwrap();
-        let this_worker = pool.get_worker();
-
-        let mut my_jobs = Vec::new();
 
         for _ in 0..100 {
-            let handle = this_worker.submit(|_| println!("Hello!"));
-            my_jobs.push(handle);
+            pool.submit(|_| println!("Hello!"));
         }
     }
 
     #[test]
     fn child_jobs() {
         let pool = make_pool(4).unwrap();
-        let this_worker = pool.get_worker();
 
-        this_worker.submit(|worker| {
-            let mut jobs = Vec::new();
+        pool.submit(|worker| {
             for _ in 0..100 {
-                let handle = worker.submit(|_| println!("Hello!"));
-                jobs.push(handle);
+                worker.submit(|_| println!("Hello!"));
             };
         }).wait().unwrap();
     }
