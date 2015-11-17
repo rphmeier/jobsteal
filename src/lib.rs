@@ -63,14 +63,13 @@ impl JobPool {
             unused.push(i);
         }
 
-
         JobPool {
             jobs: RwLock::new(v),
             unused: unused,
         }
     }
 
-    /// Submit a job to be allocated in the pool.
+    /// Submit a job to be stored in the pool.
     fn submit(&self, job: Job) -> (JobId, Receiver<JobExitStatus>) {
         let next = if let Some(next) = self.unused.pop() {
             next
@@ -95,7 +94,7 @@ impl JobPool {
         (JobId { idx: next, }, rx)
     }
 
-    // double the vector
+    // double the vector size
     fn double(&self) {
         let mut jobs = match self.jobs.write() {
             Ok(j) => j,
@@ -114,8 +113,8 @@ impl JobPool {
         }
     }
 
-    /// Get the job given by id. This function should
-    /// always yield Some if you use the id you are given.
+    /// Run the job given by id, passing the worker
+    /// as a parameter.
     fn run(&self, id: JobId, worker: &Worker) {
         use std::mem;
 
@@ -130,6 +129,7 @@ impl JobPool {
 
         let PoolEntry { job, sender } = entry;
 
+        // is there a better way to do this than to box again?
         let unbounded_fn: Box<FnBox() + Send> = Box::new(move || job.call_box((worker,)));
         let bounded_fn: Box<FnBox() + 'static + Send> = unsafe { mem::transmute(unbounded_fn) };
 
