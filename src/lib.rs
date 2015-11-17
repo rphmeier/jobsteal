@@ -6,6 +6,7 @@
 extern crate crossbeam;
 extern crate rand;
 
+use crossbeam::mem::CachePadded;
 use crossbeam::sync::TreiberStack;
 
 use std::any::Any;
@@ -46,8 +47,16 @@ enum JobExitStatus {
 /// Eventually, I may implement a lock-free vector based off of
 /// Stroustroup-et-al's paper on the subject, but for now, I've 
 /// decided to "keep it simple, stupid".
+/// However, this should be mostly wait free unless *many* jobs 
+/// are being submitted.
 struct JobPool {
-    jobs: RwLock<Vec<RefCell<Option<PoolEntry>>>>,
+    // we ensure with the lock-free stack of free indices that
+    // an index is only used by one thread at a time.
+    // mutable, disjoint borrows are therefore acceptable
+    // as long as they occur within the umbrella of a read
+    // lock and will not be interfered with by doubling of the
+    // vector.
+    jobs: RwLock<Vec<RefCell<Option<CachePadded<PoolEntry>>>>>,
     unused: TreiberStack<usize>,
 }
 
@@ -86,10 +95,10 @@ impl JobPool {
         let (tx, rx) = channel();
 
         let entry = &jobs[next];
-        *entry.borrow_mut() = Some(PoolEntry {
+        *entry.borrow_mut() = Some(CachePadded::new(PoolEntry {
             job: job,
             sender: tx,
-        });
+        }));
 
         (JobId { idx: next, }, rx)
     }
@@ -117,6 +126,7 @@ impl JobPool {
     /// as a parameter.
     fn run(&self, id: JobId, worker: &Worker) {
         use std::mem;
+        use std::ptr;
 
         let jobs = match self.jobs.read() {
             Ok(j) => j,
@@ -127,7 +137,8 @@ impl JobPool {
         // the unused stack.
         let entry = jobs[id.idx].borrow_mut().take().unwrap();
 
-        let PoolEntry { job, sender } = entry;
+        // CachePadded doesn't run destructors, so this is ok.
+        let PoolEntry { job, sender } = unsafe { ptr::read(&*entry) } ;
 
         // is there a better way to do this than to box again?
         let unbounded_fn: Box<FnBox() + Send> = Box::new(move || job.call_box((worker,)));
@@ -394,9 +405,17 @@ mod tests {
         // four worker threads, including this one.
         let pool = make_pool(4).unwrap();
 
+        let mut handles = Vec::new();
         for _ in 0..100 {
             // empty job
-            pool.submit(|_| {});
+            let handle = pool.submit(|_| {});
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            // make sure every job runs and
+            // no job panics.
+            handle.wait().unwrap();
         }
     }
 
@@ -414,8 +433,6 @@ mod tests {
 
     #[test]
     fn panic_in_the_jobqueue() {
-        use std::any::Any;
-
         let pool = make_pool(4).unwrap();
 
         let mut handles = Vec::new();
