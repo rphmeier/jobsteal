@@ -376,11 +376,13 @@ fn worker_main(worker: Worker, rx: Receiver<WorkerMessage>) {
             // time to stop!
             Ok(WorkerMessage::Stop) => {
                 worker.run_to_completion();
+                break;
             }
 
             // somehow the JobSystem got dropped without disconnecting.
             Err(TryRecvError::Disconnected) => {
                 worker.run_to_completion();
+                break;
             }
 
             _ => {}
