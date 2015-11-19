@@ -14,6 +14,7 @@ use std::boxed::FnBox;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender, Receiver, TryRecvError};
 use std::thread;
 
@@ -35,7 +36,10 @@ pub struct JobId {
 struct PoolEntry {
     job: Job,
     sender: Sender<JobExitStatus>,
+    associated_counter: *const AtomicUsize,
 }
+
+unsafe impl Send for PoolEntry {}
 
 enum JobExitStatus {
     Success,
@@ -80,6 +84,11 @@ impl JobPool {
 
     /// Submit a job to be stored in the pool.
     fn submit(&self, job: Job) -> (JobId, Receiver<JobExitStatus>) {
+        self.submit_with_counter(job, ::std::ptr::null())
+    }
+
+    /// Submit a job to be stored in the pool.
+    fn submit_with_counter(&self, job: Job, counter: *const AtomicUsize) -> (JobId, Receiver<JobExitStatus>) {
         let next = if let Some(next) = self.unused.pop() {
             next
         } else {
@@ -98,6 +107,7 @@ impl JobPool {
         *entry.borrow_mut() = Some(CachePadded::new(PoolEntry {
             job: job,
             sender: tx,
+            associated_counter: counter,
         }));
 
         (JobId { idx: next, }, rx)
@@ -122,10 +132,9 @@ impl JobPool {
         }
     }
 
-    /// Run the job given by id, passing the worker
+    /// Get the job given by id, passing the worker
     /// as a parameter.
-    fn run(&self, id: JobId, worker: &Worker) {
-        use std::mem;
+    fn get_job(&self, id: JobId) -> PoolEntry {
         use std::ptr;
 
         let jobs = match self.jobs.read() {
@@ -137,21 +146,11 @@ impl JobPool {
         // the unused stack.
         let entry = jobs[id.idx].borrow_mut().take().unwrap();
 
+
         // CachePadded doesn't run destructors, so this is ok.
-        let PoolEntry { job, sender } = unsafe { ptr::read(&*entry) } ;
-
-        // is there a better way to do this than to box again?
-        let unbounded_fn: Box<FnBox() + Send> = Box::new(move || job.call_box((worker,)));
-        let bounded_fn: Box<FnBox() + 'static + Send> = unsafe { mem::transmute(unbounded_fn) };
-
-        let exit_status = match thread::catch_panic(|| bounded_fn()) {
-            Ok(_) => { JobExitStatus::Success }
-            Err(e) => { JobExitStatus::Panic(e) }
-        };
-
-        // We don't really care if they receive it or not.
-        let _result = sender.send(exit_status);
+        let job = unsafe { ptr::read(&*entry) };
         self.unused.push(id.idx);
+        job
     }
 }
 
@@ -226,11 +225,12 @@ impl Worker {
         }
     }
 
-    fn next_job(&self) -> Option<JobId> {
-        if let Some(id) = self.queue.pop() {
+    fn run_next_job(&self) {
+        let id = if let Some(id) = self.queue.pop() {
             Some(id)
         } else {
             let mut rng = thread_rng();
+
             let idx = Range::new(0, self.siblings.len()).ind_sample(&mut rng);
             let other_queue: &Arc<JobQueue> = &self.siblings[idx];
 
@@ -240,28 +240,40 @@ impl Worker {
             } else {
                 None
             }
+        };
+
+        if let Some(id) = id {
+            self.run_job(id);
         }
     }
 
-    fn run_job(&self) {
-        if let Some(id) = self.next_job() {
-            self.pool.run(id, self);
+    fn run_job(&self, id: JobId) {
+        use std::mem;
+        let entry = self.pool.get_job(id);
+        let PoolEntry { job, sender, associated_counter: counter } = entry;
+
+        // is there a better way to do this than to box again?
+        let unbounded_fn: Box<FnBox() + Send> = Box::new(move || job.call_box((self,)));
+        let bounded_fn: Box<FnBox() + 'static + Send> = unsafe { mem::transmute(unbounded_fn) };
+
+        let exit_status = match thread::catch_panic(|| bounded_fn()) {
+            Ok(_) => { JobExitStatus::Success }
+            Err(e) => { JobExitStatus::Panic(e) }
+        };
+
+        // decrement the associated counter and send the exit status
+        if !counter.is_null() {
+             unsafe { (*counter).fetch_sub(1, Ordering::SeqCst); } 
+        }
+        drop(sender.send(exit_status)); // message doesn't _have_ to arrive
+    }
+
+    fn run_to_completion(self) {
+        while let Some(job) = self.queue.pop() {
+            self.run_job(job);
         }
     }
 
-    // run this worker to completion.
-    fn run_to_completion(&self) {
-        while let Some(id) = self.queue.pop() {
-            self.pool.run(id, self);
-        }
-
-        // help run all the sibling queues to completion as well.
-        for sibling in self.siblings.iter() {
-            while let Some(id) = sibling.steal() {
-                self.pool.run(id, self);
-            }
-        }
-    }
 }
 
 /// A JoinHandle can be used to manually wait for 
@@ -288,7 +300,7 @@ impl<'a> JoinHandle<'a> {
                 // nothing yet, just do some more work.
                 _ => {
                     if let &Some(ref worker) = &self.worker {
-                        worker.run_job()
+                        worker.run_next_job()
                     }
                 }
             }
@@ -339,7 +351,6 @@ pub fn make_pool(n_threads: usize) -> Option<JobSystem> {
         .map(|_| Arc::new(JobQueue::new())).collect();
 
     let queues = queues.into_boxed_slice();
-
     let mut handles = Vec::new();
 
     // Spawn a worker thread for every queue but the last one, 
@@ -388,7 +399,7 @@ fn worker_main(worker: Worker, rx: Receiver<WorkerMessage>) {
             _ => {}
         }
         // run a job
-        worker.run_job();
+        worker.run_next_job();
     }
 }
 
