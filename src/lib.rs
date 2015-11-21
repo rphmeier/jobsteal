@@ -13,6 +13,7 @@ use std::any::Any;
 use std::boxed::FnBox;
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender, Receiver, TryRecvError};
@@ -26,20 +27,22 @@ enum WorkerMessage {
     Stop,
 }
 
-type Job = Box<FnBox(&Worker) + 'static + Send>;
+type JobFn = Box<FnBox(&Worker) + 'static + Send>;
 
 /// A job's id in the pool.
 pub struct JobId {
     idx: usize,
 }
 
-struct PoolEntry {
-    job: Job,
+struct Job {
+    func: JobFn,
     sender: Sender<JobExitStatus>,
-    associated_counter: *const AtomicUsize,
+    // counter for this job's associated scope.
+    // null if there isn't one.
+    scope_counter: *const AtomicUsize,
 }
 
-unsafe impl Send for PoolEntry {}
+unsafe impl Send for Job {}
 
 enum JobExitStatus {
     Success,
@@ -60,7 +63,7 @@ struct JobPool {
     // as long as they occur within the umbrella of a read
     // lock and will not be interfered with by doubling of the
     // vector.
-    jobs: RwLock<Vec<RefCell<Option<CachePadded<PoolEntry>>>>>,
+    jobs: RwLock<Vec<RefCell<Option<CachePadded<Job>>>>>,
     unused: TreiberStack<usize>,
 }
 
@@ -83,12 +86,12 @@ impl JobPool {
     }
 
     /// Submit a job to be stored in the pool.
-    fn submit(&self, job: Job) -> (JobId, Receiver<JobExitStatus>) {
+    fn submit(&self, job: JobFn) -> (JobId, Receiver<JobExitStatus>) {
         self.submit_with_counter(job, ::std::ptr::null())
     }
 
-    /// Submit a job to be stored in the pool.
-    fn submit_with_counter(&self, job: Job, counter: *const AtomicUsize) -> (JobId, Receiver<JobExitStatus>) {
+    /// Submit a job to be stored in the pool with a pointer to a scope counter.
+    fn submit_with_counter(&self, job: JobFn, counter: *const AtomicUsize) -> (JobId, Receiver<JobExitStatus>) {
         let next = if let Some(next) = self.unused.pop() {
             next
         } else {
@@ -104,10 +107,11 @@ impl JobPool {
         let (tx, rx) = channel();
 
         let entry = &jobs[next];
-        *entry.borrow_mut() = Some(CachePadded::new(PoolEntry {
-            job: job,
+
+        *entry.borrow_mut() = Some(CachePadded::new(Job {
+            func: job,
             sender: tx,
-            associated_counter: counter,
+            scope_counter: counter,
         }));
 
         (JobId { idx: next, }, rx)
@@ -134,7 +138,7 @@ impl JobPool {
 
     /// Get the job given by id, passing the worker
     /// as a parameter.
-    fn get_job(&self, id: JobId) -> PoolEntry {
+    fn get_job(&self, id: JobId) -> Job {
         use std::ptr;
 
         let jobs = match self.jobs.read() {
@@ -214,6 +218,7 @@ pub struct Worker {
 }
 
 impl Worker {
+    /// Submit a job to be run.
     pub fn submit<F: FnOnce(&Worker) + 'static + Send>(&self, f: F) -> JoinHandle {
         let job = Box::new(f);
         let (id, notifier) = self.pool.submit(job);
@@ -225,6 +230,26 @@ impl Worker {
         }
     }
 
+    /// Create a scope to run jobs that access local stack data.
+    /// This will block until child jobs are finished.
+    pub fn scope<'a, 'b, F: FnOnce(&Scope<'a, 'b>)>(&'a self, f: F) {
+        let s = Scope {
+            counter: AtomicUsize::new(0),
+            pool: &*self.pool, 
+            queue: &*self.queue,
+            worker: Some(self),
+            _marker: PhantomData,
+        };
+
+        f(&s);
+
+        // the move incurred by dropping s actually
+        // invalidates all the pointers to its counter.
+        // so this should preferably be done out of the 
+        // destructor.
+        s.wait_all();
+    }
+
     fn run_next_job(&self) {
         let id = if let Some(id) = self.queue.pop() {
             Some(id)
@@ -234,7 +259,7 @@ impl Worker {
             let idx = Range::new(0, self.siblings.len()).ind_sample(&mut rng);
             let other_queue: &Arc<JobQueue> = &self.siblings[idx];
 
-            // make sure we don't steal from our own queue.
+            // make sure we dn't steal from our own queue.
             if &*self.queue as *const JobQueue != &**other_queue as *const JobQueue {
                 other_queue.steal()
             } else {
@@ -249,11 +274,11 @@ impl Worker {
 
     fn run_job(&self, id: JobId) {
         use std::mem;
-        let entry = self.pool.get_job(id);
-        let PoolEntry { job, sender, associated_counter: counter } = entry;
+        let job = self.pool.get_job(id);
+        let Job { func, sender, scope_counter } = job;
 
         // is there a better way to do this than to box again?
-        let unbounded_fn: Box<FnBox() + Send> = Box::new(move || job.call_box((self,)));
+        let unbounded_fn: Box<FnBox() + Send> = Box::new(move || func.call_box((self,)));
         let bounded_fn: Box<FnBox() + 'static + Send> = unsafe { mem::transmute(unbounded_fn) };
 
         let exit_status = match thread::catch_panic(|| bounded_fn()) {
@@ -261,10 +286,12 @@ impl Worker {
             Err(e) => { JobExitStatus::Panic(e) }
         };
 
-        // decrement the associated counter and send the exit status
-        if !counter.is_null() {
-             unsafe { (*counter).fetch_sub(1, Ordering::SeqCst); } 
+        // decrement the scope counter and send the exit status
+        if !scope_counter.is_null() {
+            let counter: &AtomicUsize = unsafe { (&*scope_counter) };
+            counter.fetch_sub(1, Ordering::SeqCst);
         }
+
         drop(sender.send(exit_status)); // message doesn't _have_ to arrive
     }
 
@@ -274,6 +301,43 @@ impl Worker {
         }
     }
 
+}
+
+/// A scope for submitting jobs.
+pub struct Scope<'a, 'b> {
+    counter: AtomicUsize,
+    pool: &'a JobPool,
+    queue: &'a JobQueue,
+    worker: Option<&'a Worker>,
+    _marker: PhantomData<RefCell<&'b ()>>,
+}
+
+impl<'a, 'b> Scope<'a, 'b> {
+    pub fn submit<F: FnOnce(&Worker) + 'b + Send>(&'a self, f: F) -> JoinHandle<'a> {
+        use std::mem;
+
+        let unbounded_fn: Box<FnBox(&Worker) + 'b + Send> = Box::new(f);
+        let bounded_fn: Box<FnBox(&Worker) + 'static + Send> = unsafe { mem::transmute(unbounded_fn) };
+
+        // increment the counter before submitting the job just in
+        // case it gets grabbed really quickly
+        let (id, notifier) = self.pool.submit_with_counter(bounded_fn, &self.counter as *const AtomicUsize);
+        self.counter.fetch_add(1, Ordering::SeqCst);
+        self.queue.push(id);
+        JoinHandle {
+            notifier: notifier,
+            worker: None,
+        }
+    }
+
+    fn wait_all(&self) {
+        // busy wait until they're all done.
+        while self.counter.load(Ordering::SeqCst) > 0 {
+            if let &Some(ref worker) = &self.worker {
+                worker.run_next_job();
+            }
+        }
+    }
 }
 
 /// A JoinHandle can be used to manually wait for 
@@ -471,11 +535,10 @@ mod tests {
 
     }
 
-/*    #[test]
+    #[test]
     fn scoping() {
         let pool = make_pool(4).unwrap();
-        let this_worker = pool.get_worker();
-        this_worker.submit(|worker| {
+        pool.submit(|worker| {
             let mut v = vec![0; 256];
 
             worker.scope(|scope| {
@@ -489,6 +552,6 @@ mod tests {
             for i in v {
                 assert_eq!(i, 1);
             }
-        }).wait();
-    }*/
+        }).wait().unwrap();
+    }
 }
