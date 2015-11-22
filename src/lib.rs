@@ -30,15 +30,13 @@ enum WorkerMessage {
 type JobFn = Box<FnBox(&Worker) + 'static + Send>;
 
 /// A job's id in the pool.
-pub struct JobId {
+struct JobId {
     idx: usize,
 }
 
 struct Job {
     func: JobFn,
     sender: Sender<JobExitStatus>,
-    // counter for this job's associated scope.
-    // null if there isn't one.
     scope_counter: *const AtomicUsize,
 }
 
@@ -319,8 +317,8 @@ impl<'a, 'b> Scope<'a, 'b> {
         let unbounded_fn: Box<FnBox(&Worker) + 'b + Send> = Box::new(f);
         let bounded_fn: Box<FnBox(&Worker) + 'static + Send> = unsafe { mem::transmute(unbounded_fn) };
 
-        // increment the counter before submitting the job just in
-        // case it gets grabbed really quickly
+        // increment the counter before pushing the job to the
+        // queue in case it gets grabbed really quickly
         let (id, notifier) = self.pool.submit_with_counter(bounded_fn, &self.counter as *const AtomicUsize);
         self.counter.fetch_add(1, Ordering::SeqCst);
         self.queue.push(id);
@@ -462,7 +460,6 @@ fn worker_main(worker: Worker, rx: Receiver<WorkerMessage>) {
 
             _ => {}
         }
-        // run a job
         worker.run_next_job();
     }
 }
