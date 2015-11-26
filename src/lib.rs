@@ -7,7 +7,7 @@ extern crate crossbeam;
 extern crate rand;
 
 use crossbeam::mem::CachePadded;
-use crossbeam::sync::TreiberStack;
+use crossbeam::sync::SegQueue;
 
 use std::any::Any;
 use std::boxed::FnBox;
@@ -62,14 +62,14 @@ struct JobPool {
     // lock and will not be interfered with by doubling of the
     // vector.
     jobs: RwLock<Vec<RefCell<Option<CachePadded<Job>>>>>,
-    unused: TreiberStack<usize>,
+    unused: SegQueue<usize>,
 }
 
 impl JobPool {
     /// Initialize this pool with the given capacity.
     fn with_capacity(size: usize) -> Self {
         let mut v = Vec::with_capacity(size);
-        let unused = TreiberStack::new();
+        let unused = SegQueue::new();
 
         for i in (0..size).rev() {
             v.push(RefCell::new(None));
