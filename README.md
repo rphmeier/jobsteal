@@ -1,4 +1,4 @@
-# Jobsteal
+# Jobsteal ![jobsteal](https://travis-ci.org/rphmeier/jobsteal.svg)
 
 A work-stealing fork-join threadpool written in Rust.
 
@@ -57,7 +57,7 @@ This crate has the unfortunate limitation (for the time being) that only 4096 jo
 until synchronized. Having this limitation allows jobs to be allocated in contiguous memory, but the benefits of that 
 may not outweigh the costs.
 
----
+
 ## Panic Safety
 A panic in one worker is intended to propagate to the main thread eventually. However, the code hasn't been vetted for safety, so please try to avoid panicking in your jobs.
 There should probably be a PanicSafe bound on job functions.
