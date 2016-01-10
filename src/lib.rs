@@ -45,7 +45,7 @@ enum State {
     Paused, // paused, waiting for start or shutdown message.
 }
 
-pub struct Worker {
+struct Worker {
     queues: Arc<Vec<Queue>>,
     pools: Arc<Vec<Pool>>,
     idx: usize, // the index of this worker's queue and pool in the Vec.
