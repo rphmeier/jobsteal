@@ -61,26 +61,29 @@ impl Queue {
     }
     
     // steal a job from the public end of the queue.
+    // loops until it wins a race or the queue is empty.
     pub fn steal(&self) -> Option<*mut Job> {
-        unsafe {
-            let t = self.top.load(Ordering::Acquire);
-            
-            compiler_barrier!();
-            let b = self.bottom.load(Ordering::Acquire);
-            if t < b {
-                // non-empty queue.
-                // may be racing against other steal/pop calls.
-                let job = (*self.buf.get())[t & MASK];
-                if self.top.compare_and_swap(t, t + 1, Ordering::AcqRel) != t {
-                    // lost the race.
-                    None
+        loop {
+            unsafe {
+                let t = self.top.load(Ordering::Acquire);
+                
+                compiler_barrier!();
+                let b = self.bottom.load(Ordering::Acquire);
+                if t < b {
+                    // non-empty queue.
+                    // may be racing against other steal/pop calls.
+                    let job = (*self.buf.get())[t & MASK];
+                    if self.top.compare_and_swap(t, t + 1, Ordering::AcqRel) != t {
+                        // lost the race.
+                        continue;
+                    } else {
+                        // won the race.   
+                        return Some(job);
+                    }                
                 } else {
-                    // won the race.   
-                    Some(job)
-                }                
-            } else {
-                // empty queue.
-                None
+                    // empty queue.
+                    return None;
+                }
             }
         }
     }
