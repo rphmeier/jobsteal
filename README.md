@@ -1,4 +1,4 @@
-# Jobsteal
+# Jobsteal ![jobsteal](https://travis-ci.org/rphmeier/jobsteal.svg)
 
 A work-stealing fork-join threadpool written in Rust.
 
