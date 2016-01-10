@@ -15,15 +15,13 @@ fn main() {
     // spawn 100 jobs
     for i in 0..100 {
         // You can only submit jobs with a static lifetime this way.
-        // It returns a RAII guard for force-waiting.
-        // If you just let it drop, you can do other things while you wait.
-        let handle = pool.submit(move |_| println!("Job {}", i));
+        pool.submit(move |_| println!("Job {}", i));
     }
 }
 ```
 
 ---
-Here's a more useful example where we split up a vector into chunks and submit a job for every part. This makes use of the scoping feature. Scoped threads return a different kind of handle.
+Here's a more useful example where we split up a vector into chunks and submit a job for every part. This makes use of the scoping feature.
 ```rust
 use jobsteal::make_pool;
 
@@ -33,30 +31,33 @@ fn main(){
 
     let mut v = vec![0; 256];
 
-    // Create a scope object
-    pool.scope(|scope| {
+    // Create a scoped spawner.
+    pool.scope(|spawner| {
         for chunk in v.chunks_mut(32) {
 
             // Jobs spawned by the scope are only allowed to access
-            // data outside the scope of this closure.
-            let handle = scope.submit(move |_| {
+            // data which strictly outlives the call to "scope".
+            scope.submit(move |_| {
                 for i in chunk { *i += 1 }
             });
-
-            // Scoped handles are released on drop or manually.
-            // You can also wait for work to finish manually by
-            // calling wait().
-            handle.release();
         }
 
         for i in v {
             assert_eq!(i, 1);
         }
     });
+    // all jobs within the scope are forced to complete before the scope function returns.
 
 }
 ```
 
+The spawner passed to the "scope" closure can be used to create more scopes -- as nested as you'd like.
+
+This crate has the unfortunate limitation (for the time being) that only 4096 jobs can be spawned on each thread
+until synchronized. Having this limitation allows jobs to be allocated in contiguous memory, but the benefits of that 
+may not outweigh the costs.
+
 ---
-## Safety
-All handles should be (relatively) safe to leak. However, the code hasn't been vetted for safety. I would strongly recommend against leaking handles intentionally. Additionally, the destructor for Scope isn't fully transactional yet and cannot necessarily resume while unwinding. Panic safety isn't perfect, so please avoid panics in your code for the time being.
+## Panic Safety
+A panic in one worker is intended to propagate to the main thread eventually. However, the code hasn't been vetted for safety, so please try to avoid panicking in your jobs.
+There should probably be a PanicSafe bound on job functions.
