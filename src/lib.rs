@@ -60,6 +60,12 @@ impl Worker {
             return Some(job);
         }
         
+        // if the queue is empty (pop failed), we can clear the pool for this queue.
+        // this works only because 
+        // A) we push pool-allocated jobs only onto the local queue,
+        // B) pop gets priority when racing against "steal".
+        self.pools[self.idx].reset();
+        
         let (mut most_work, mut most_idx) = (0, None);
         for (i, queue) in self.queues.iter().enumerate() {
             let len = queue.len();
