@@ -4,7 +4,7 @@ version = "0.2.0"
 authors = ["rphmeier <rphmeier@gmail.com>"]
 description = "A work-stealing fork-join threadpool written in Rust."
 documentation = "https://rphmeier.github.io/jobsteal/"
-license = "MIT"
+license = "MIT/Apache-2.0"
 repository = "https://github.com/rphmeier/jobsteal"
 
 
