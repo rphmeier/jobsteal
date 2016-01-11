@@ -1,6 +1,6 @@
 [package]
 name = "jobsteal"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["rphmeier <rphmeier@gmail.com>"]
 description = "A work-stealing fork-join threadpool written in Rust."
 documentation = "https://rphmeier.github.io/jobsteal/"
@@ -9,10 +9,6 @@ repository = "https://github.com/rphmeier/jobsteal"
 
 
 keywords = ['fork', 'join', 'job', 'threadpool', 'pool']
-
-[dependencies]
-rand = "0.3"
-crossbeam = "0.1.6"
 
 [features]
 nightly = []
