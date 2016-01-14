@@ -22,20 +22,20 @@ const MAX_JOBS: usize = 4096;
 
 // messages to workers.
 enum ToWorker {
-	Start, // start
-	Clear, // run all jobs to completion, then reset the pool.
-	Shutdown, // all workers are clear and no jobs are running. safe to tear down pools.
+    Start, // start
+    Clear, // run all jobs to completion, then reset the pool.
+    Shutdown, // all workers are clear and no jobs are running. safe to tear down pools.
 }
 // messages to the leader from workers.
 enum ToLeader {
-	Cleared, // done clearing. will wait for start or shutdown
+    Cleared, // done clearing. will wait for start or shutdown
     Panicked,
 }
 
 struct WorkerHandle {
-	tx: Sender<ToWorker>,
-	rx: Receiver<ToLeader>,
-	thread: Option<thread::JoinHandle<()>>,
+    tx: Sender<ToWorker>,
+    rx: Receiver<ToLeader>,
+    thread: Option<thread::JoinHandle<()>>,
 }
 
 // Finite state machine for controlling workers.
@@ -51,7 +51,7 @@ struct Worker {
     idx: usize, // the index of this worker's queue and pool in the Vec.
 }
 
-// TODO: implement !Sync for Worker. 
+// TODO: implement !Sync for Worker.
 
 impl Worker {
     // pop a job from the worker's queue, or steal one from the queue with the most work.
@@ -59,13 +59,13 @@ impl Worker {
         if let Some(job) = self.queues[self.idx].pop() {
             return Some(job);
         }
-        
+
         // if the queue is empty (pop failed), we can clear the pool for this queue.
-        // this works only because 
+        // this works only because
         // A) we push pool-allocated jobs only onto the local queue,
         // B) pop gets priority when racing against "steal".
         self.pools[self.idx].reset();
-        
+
         let (mut most_work, mut most_idx) = (0, None);
         for (i, queue) in self.queues.iter().enumerate() {
             let len = queue.len();
@@ -74,14 +74,14 @@ impl Worker {
                 most_idx = Some(i);
             }
         }
-        
+
         if let Some(idx) = most_idx {
             self.queues[idx].steal()
         } else {
             None
         }
     }
-    
+
     // do a sweep through all the queues, saying whether all
     // were observed to be empty initially.
     fn clear_pass(&self) -> bool {
@@ -99,40 +99,43 @@ impl Worker {
                 }
             }
         }
-        
+
         all_clear
     }
-    
+
     fn clear(&self) {
         while !self.clear_pass() {}
     }
-    
+
     // run the next job.
     unsafe fn run_next(&self) {
         if let Some(job) = self.pop_or_steal() {
             (*job).call(self)
         }
     }
-    
+
     // This must be called on the thread the worker is active on.
-    unsafe fn submit_internal<F>(&self, counter: *const AtomicUsize, f: F) where F: Send + FnOnce(&Worker) {
+    unsafe fn submit_internal<F>(&self, counter: *const AtomicUsize, f: F)
+        where F: Send + FnOnce(&Worker)
+    {
         let job = Job::new(counter, f);
         let job_ptr = self.pools[self.idx].alloc(job);
         self.queues[self.idx].push(job_ptr);
     }
-    
+
     // construct a new spawning scope.
     // this waits for all jobs submitted internally
     // to complete.
     fn scope<'pool, 'new, F>(&'pool self, f: F)
-    where F: FnOnce(&Spawner<'pool, 'new>) {
+        where F: FnOnce(&Spawner<'pool, 'new>)
+    {
         let counter = AtomicUsize::new(0);
         let s = make_spawner(self, &counter);
         f(&s);
-        
+
         while counter.load(Ordering::Acquire) != 0 {
-            unsafe { self.run_next() }    
-        }        
+            unsafe { self.run_next() }
+        }
     }
 }
 
@@ -150,15 +153,16 @@ unsafe impl<'pool, 'scope> Sync for Spawner<'pool, 'scope> {}
 impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// Execute a function which necessarily outlives the scope which
     /// this resides in.
-    pub fn submit<F>(&self, f: F) 
-    where F: 'scope + Send + FnOnce(&Spawner<'pool, 'scope>) {
+    pub fn submit<F>(&self, f: F)
+        where F: 'scope + Send + FnOnce(&Spawner<'pool, 'scope>)
+    {
         use std::mem;
-        
+
         // for sending the counter pointer across thread boundaries.
         struct SendCounter(*const AtomicUsize);
         unsafe impl Send for SendCounter {}
-        
-        unsafe { 
+
+        unsafe {
             // increment the counter first just in case, somehow, this job
             // gets grabbed before we have a chance to increment it,
             // and we wait for all jobs to complete.
@@ -167,19 +171,21 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
             self.worker.submit_internal(self.counter, move |worker| {
                 let SendCounter(count_ptr) = counter;
                 // make a new spawner associated with the same scope,
-                // but with the correct worker for the thread -- so if 
-                // this job spawns any children, we won't break any 
+                // but with the correct worker for the thread -- so if
+                // this job spawns any children, we won't break any
                 // invariants by accessing other workers' queues/pools
                 // in unexpected ways.
                 let spawner = make_spawner(worker, count_ptr);
-                f(&mem::transmute(spawner) )
+                f(&mem::transmute(spawner))
             });
         }
     }
-    
+
     /// Construct a new spawning scope smaller than the one this spawner resides in.
     pub fn scope<'new, F>(&self, f: F)
-    where 'scope: 'new, F: FnOnce(&Spawner<'pool, 'new>) {
+        where 'scope: 'new,
+              F: FnOnce(&Spawner<'pool, 'new>)
+    {
         self.worker.scope(f);
     }
 }
@@ -202,7 +208,7 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
     }
     // if the worker for this thread panics,
     let _guard = PanicGuard(tx.clone());
-    
+
     let mut state = State::Paused;
     loop {
         match state {
@@ -213,13 +219,13 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
                         tx.send(ToLeader::Cleared).expect("Pool hung up on worker");
                         state = State::Paused;
                     }
-                    
-                    _ => unreachable!()
+
+                    _ => unreachable!(),
                 }
-                
-                unsafe { worker.run_next() } 
+
+                unsafe { worker.run_next() }
             }
-            
+
             State::Paused => {
                 if let Ok(msg) = rx.recv() {
                     match msg {
@@ -227,12 +233,12 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
                             state = State::Running;
                             continue;
                         }
-                        
+
                         ToWorker::Shutdown => {
                             break;
                         }
-                        
-                        _ => unreachable!()
+
+                        _ => unreachable!(),
                     }
                 } else {
                     panic!("Pool hung up on worker");
@@ -246,39 +252,39 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
 /// work-stealing fork-join thread pool.
 // The fields here are put in Vecs for cache contiguity.
 pub struct WorkPool {
-	workers: Vec<WorkerHandle>,
+    workers: Vec<WorkerHandle>,
     local_worker: Worker,
     state: State,
 }
 
 impl WorkPool {
-	/// Creates a work pool with `n` worker threads.
-	pub fn new(n: usize) -> Result<Self, Error> {
+    /// Creates a work pool with `n` worker threads.
+    pub fn new(n: usize) -> Result<Self, Error> {
         // one extra queue and pool for the job system.
-        let queues = Arc::new((0..n+1).map(|_| Queue::new()).collect::<Vec<_>>());
-        let pools = Arc::new((0..n+1).map(|_| Pool::new()).collect::<Vec<_>>());
+        let queues = Arc::new((0..n + 1).map(|_| Queue::new()).collect::<Vec<_>>());
+        let pools = Arc::new((0..n + 1).map(|_| Pool::new()).collect::<Vec<_>>());
         let mut workers = Vec::with_capacity(n);
-        
+
         for i in 0..n {
             let (work_send, work_recv) = channel();
             let (lead_send, lead_recv) = channel();
-            
+
             let worker = Worker {
                 queues: queues.clone(),
                 pools: pools.clone(),
                 idx: i + 1,
             };
-            
+
             let builder = thread::Builder::new().name(format!("worker_{}", i));
             let handle = try!(builder.spawn(|| worker_main(lead_send, work_recv, worker)));
-            
+
             workers.push(WorkerHandle {
                 tx: work_send,
                 rx: lead_recv,
                 thread: Some(handle),
             });
         }
-        
+
         Ok(WorkPool {
             workers: workers,
             local_worker: Worker {
@@ -288,8 +294,8 @@ impl WorkPool {
             },
             state: State::Paused,
         })
-	}
-    
+    }
+
     /// Finish all current jobs which are queued, and synchronize the workers until
     /// it's time to start again. 
     ///
@@ -299,16 +305,17 @@ impl WorkPool {
     pub fn synchronize(&mut self) {
         self.clear_all();
     }
-    
+
     /// Create a new spawning scope for submitting jobs.
     /// Any jobs submitted in this scope will be completed
     /// by the end of this function call.
     pub fn scope<'pool, 'new, F>(&'pool mut self, f: F)
-    where F: FnOnce(&Spawner<'pool, 'new>) {
+        where F: FnOnce(&Spawner<'pool, 'new>)
+    {
         self.spin_up();
         self.local_worker.scope(f);
     }
-    
+
     /// Execute a job which strictly owns its contents.
     /// The execution of this function may be deferred to beyond
     /// this function call.
@@ -316,44 +323,47 @@ impl WorkPool {
     /// strictly outlive the pool. However, there is always the
     /// chance that the pool could be leaked, violating the invariant
     /// that the job is completed before the borrow of the data is.
-    pub fn submit<'a, F>(&'a mut self, f: F) 
-    where F: 'static + Send + FnOnce(&Spawner<'a, 'static>) {
+    pub fn submit<'a, F>(&'a mut self, f: F)
+        where F: 'static + Send + FnOnce(&Spawner<'a, 'static>)
+    {
         use std::mem;
         use std::ptr;
-        
+
         self.spin_up();
         // make a job without a counter.
-        unsafe { 
-                self.local_worker.submit_internal(ptr::null_mut(), move |worker| {
+        unsafe {
+            self.local_worker.submit_internal(ptr::null_mut(), move |worker| {
                 let spawner = make_spawner(&worker, ptr::null_mut());
-                f(&mem::transmute(spawner))          
+                f(&mem::transmute(spawner))
             })
         }
     }
-    
+
     // spin up all the workers, in case they were in a paused
     // state.
     fn spin_up(&mut self) {
-        if self.state != State::Running { 
+        if self.state != State::Running {
             for worker in &self.workers {
                 worker.tx.send(ToWorker::Start).expect("Worker hung up on pool");
             }
-            
+
             self.state = State::Running;
         }
     }
-    
+
     // clear all the workers and sets the state to paused.
     fn clear_all(&mut self) {
-        if self.state == State::Paused { return; }
+        if self.state == State::Paused {
+            return;
+        }
         // send every worker a clear message
         for worker in &self.workers {
             worker.tx.send(ToWorker::Clear).ok().expect("Worker hung up on pool.");
         }
-        
+
         // do a clear run on the local worker as well.
         self.local_worker.clear();
-        
+
         let mut panicked = false;
         // wait for confirmation from each worker.
         // the queues are not guaranteed to be empty until the last one responds!
@@ -367,25 +377,25 @@ impl WorkPool {
                         }
                     }
                 }
-                
-                Err(_) => panic!("Worker hung up on job system.")
+
+                Err(_) => panic!("Worker hung up on job system."),
             }
         }
-        
+
         // reset the counters in every queue so there's no chance of
         // overlap.
         for queue in self.local_worker.queues.iter() {
             // asserts that len == 0 in debug mode.
             queue.reset_counters();
         }
-        
+
         // reset all the pools.
         for pool in self.local_worker.pools.iter() {
-            pool.reset();    
+            pool.reset();
         }
-        
+
         // cleared and panicked workers are waiting for a shutdown message.
-        if panicked { 
+        if panicked {
             panic!("Propagating worker thread panic")
         }
 
@@ -398,12 +408,12 @@ impl Drop for WorkPool {
     fn drop(&mut self) {
         // finish all work.
         self.clear_all();
-        
+
         // now tell every worker they can shut down safely.
         for worker in &self.workers {
             worker.tx.send(ToWorker::Shutdown).ok().expect("Worker hung up on job system");
         }
-        
+
         // join the threads (although they should already be at this point).
         for worker in &mut self.workers {
             worker.thread.take().map(|handle| handle.join());
@@ -418,15 +428,15 @@ pub fn make_pool(n: usize) -> Result<WorkPool, Error> {
 
 #[cfg(test)]
 mod tests {
-	use super::WorkPool;
-    
+    use super::WorkPool;
+
     #[test]
     fn creation_destruction() {
         for i in 0..32 {
             let _ = WorkPool::new(i).unwrap();
         }
     }
-    
+
     #[test]
     fn split_work() {
         let mut pool = WorkPool::new(4).unwrap();
@@ -438,26 +448,26 @@ mod tests {
                 });
             }
         });
-        
+
         assert_eq!(v, (0..1024).collect::<Vec<_>>());
     }
-    
+
     #[test]
     fn multilevel_scoping() {
         let mut pool = WorkPool::new(4).unwrap();
         pool.scope(|spawner| {
             let mut v = vec![0; 256];
             spawner.scope(|s| {
-               for i in &mut v { 
-                   s.submit(move |_| *i += 1) 
-               }
+                for i in &mut v {
+                    s.submit(move |_| *i += 1)
+                }
             });
             // job is forcibly joined here.
-            
+
             assert_eq!(v, (0..256).map(|_| 1).collect::<Vec<_>>())
         }); // any other jobs would be forcibly joined here.
     }
-    
+
     #[test]
     fn multiple_synchronizations() {
         let mut pool = WorkPool::new(4).unwrap();
@@ -465,23 +475,27 @@ mod tests {
             pool.synchronize();
         }
     }
-    
+
     #[test]
     fn outlives_pool() {
         let mut v = vec![0; 256];
         let mut pool = WorkPool::new(4).unwrap();
-        
+
         // can only execute 'static functions here -- otherwise,
         // some person might make the dumb mistake of calling `forget` the
         // pool before it has the chance to run all submitted jobs.
-        pool.submit(move |_| for i in &mut v { *i += 1} );
+        pool.submit(move |_| {
+            for i in &mut v {
+                *i += 1
+            }
+        });
     }
-    
+
     #[test]
     #[should_panic]
     fn job_panic() {
         let mut pool = WorkPool::new(4).unwrap();
-        
+
         pool.submit(|_| panic!("Eep!"));
     }
 }
