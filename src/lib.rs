@@ -190,6 +190,8 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     }
     
     /// Execute two closures, possibly asynchronously, and return their results.
+    /// This will block until they are both complete.
+    #[allow(non_camel_case_types)]
     pub fn join<A, B, R_A, R_B>(&self, oper_a: A, oper_b: B) -> (R_A, R_B)
     where A: Send + FnOnce(&Spawner) -> R_A,
           B: Send + FnOnce(&Spawner) -> R_B,
@@ -510,6 +512,11 @@ mod tests {
                 *i += 1
             }
         });
+    }
+    
+    #[test]
+    fn join() {
+        
     }
 
     #[test]
