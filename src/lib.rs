@@ -148,8 +148,6 @@ pub struct Spawner<'pool, 'scope> {
     _marker: PhantomData<*mut &'scope mut ()>,
 }
 
-unsafe impl<'pool, 'scope> Sync for Spawner<'pool, 'scope> {}
-
 impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// Execute a function which necessarily outlives the scope which
     /// this resides in.
