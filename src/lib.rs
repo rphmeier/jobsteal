@@ -14,7 +14,7 @@ use self::queue::Queue;
 use std::io::Error;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
@@ -213,14 +213,15 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
     loop {
         match state {
             State::Running => {
-                match rx.recv().expect("Pool hung up on worker") {
-                    ToWorker::Clear => {
+                match rx.try_recv() {
+                    Ok(ToWorker::Clear) => {
                         worker.clear();
                         tx.send(ToLeader::Cleared).expect("Pool hung up on worker");
                         state = State::Paused;
                     }
-
-                    _ => unreachable!(),
+                    Ok(_) => unreachable!(),
+                    Err(TryRecvError::Disconnected) => panic!("Pool hung up on worker"),
+                    _ => {}
                 }
 
                 unsafe { worker.run_next() }
