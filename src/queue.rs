@@ -123,7 +123,7 @@ impl Queue {
 
     // get the length of this queue.
     pub fn len(&self) -> usize {
-        self.bottom.load(Ordering::Acquire) - self.top.load(Ordering::Acquire)
+        self.bottom.load(Ordering::Acquire).saturating_sub(self.top.load(Ordering::Acquire))
     }
 
     // reset the counters, so they don't wrap around.
