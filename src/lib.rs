@@ -165,7 +165,9 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
             // gets grabbed before we have a chance to increment it,
             // and we wait for all jobs to complete.
             let counter: SendCounter = SendCounter(self.counter);
-            (*self.counter).fetch_add(1, Ordering::AcqRel);
+            if !self.counter.is_null() {
+                (*self.counter).fetch_add(1, Ordering::AcqRel);   
+            }
             self.worker.submit_internal(self.counter, move |worker| {
                 let SendCounter(count_ptr) = counter;
                 // make a new spawner associated with the same scope,
