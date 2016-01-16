@@ -1,6 +1,8 @@
-# Jobsteal ![jobsteal](https://travis-ci.org/rphmeier/jobsteal.svg)
+# Jobsteal [![jobsteal](https://travis-ci.org/rphmeier/jobsteal.svg?branch=master)](https://travis-ci.org/rphmeier/jobsteal)
 
 A work-stealing fork-join threadpool written in Rust.
+
+## [See the Documentation](https://rphmeier.github.io/jobsteal/)
 
 ## Examples
 This is a basic example to show a simple way to use the job pool.
