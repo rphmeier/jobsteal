@@ -186,6 +186,23 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     {
         self.worker.scope(f);
     }
+    
+    /// Execute two closures, possibly asynchronously, and return their results.
+    pub fn join<A, B, R_A, R_B>(&self, oper_a: A, oper_b: B) -> (R_A, R_B)
+    where A: Send + FnOnce(&Spawner) -> R_A,
+          B: Send + FnOnce(&Spawner) -> R_B,
+          R_A: Send,
+          R_B: Send 
+    {
+        let mut a = None;
+        let mut b = None;
+        self.scope(|spawner| {
+            spawner.submit(|s| a = Some(oper_a(s)));
+            spawner.submit(|s| b = Some(oper_b(s)));
+        });
+        
+        (a.unwrap(), b.unwrap())
+    }
 }
 fn make_spawner<'a, 'b>(worker: &'a Worker, counter: *const AtomicUsize) -> Spawner<'a, 'b> {
     Spawner {
