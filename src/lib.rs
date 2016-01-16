@@ -284,7 +284,7 @@ impl WorkPool {
             });
         }
 
-        Ok(WorkPool {
+        let mut pool = WorkPool {
             workers: workers,
             local_worker: Worker {
                 queues: queues,
@@ -292,7 +292,11 @@ impl WorkPool {
                 idx: 0,
             },
             state: State::Paused,
-        })
+        };
+        
+        pool.spin_up();
+        
+        Ok(pool)
     }
 
     /// Finish all current jobs which are queued, and synchronize the workers until
@@ -338,9 +342,9 @@ impl WorkPool {
         }
     }
 
-    // spin up all the workers, in case they were in a paused
-    // state.
-    fn spin_up(&mut self) {
+    /// Spin up all the workers, in case they were in a paused
+    /// state.
+    pub fn spin_up(&mut self) {
         if self.state != State::Running {
             for worker in &self.workers {
                 worker.tx.send(ToWorker::Start).expect("Worker hung up on pool");
