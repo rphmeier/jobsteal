@@ -12,3 +12,6 @@ keywords = ['fork', 'join', 'job', 'threadpool', 'pool']
 
 [features]
 nightly = []
+
+[dependencies]
+rand = "0.3"

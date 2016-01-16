@@ -135,7 +135,15 @@ impl Queue {
     // this must be done from the thread which logically
     // owns this queue.
     pub unsafe fn pop(&self) -> Option<*mut Job> {
-        if self.len() == 0 { return None }
+        {
+            // try to perform an early return.
+            let t = self.top.load(Relaxed);
+            let b = self.bottom.load(Relaxed);
+            let len = b.wrapping_sub(t);
+            if len <= 0 {
+                return None
+            }
+        }
         
         let b = self.bottom.load(Relaxed).wrapping_sub(1);
         let a = self.buf.load(Relaxed);
@@ -161,16 +169,9 @@ impl Queue {
             x
         } else {
             // empty queue.
+            self.bottom.store(b.wrapping_add(1), Relaxed);
             None
         }
-    }
-
-    // get the length of this queue.
-    #[inline]
-    pub fn len(&self) -> usize {
-        let t = self.top.load(Relaxed);
-        let b = self.bottom.load(Relaxed);
-        ::std::cmp::max(0, b.wrapping_sub(t)) as usize
     }
 }
 

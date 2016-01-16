@@ -3,14 +3,19 @@
 //! For infinite loops, the longest-running of tasks, behavior will be as expected.
 #![cfg_attr(nightly, feature(core_intrinsics))]
 
+extern crate rand;
+
 mod job;
 mod queue;
 mod pool;
+
+use rand::{Rng, SeedableRng, thread_rng, XorShiftRng};
 
 use self::job::Job;
 use self::pool::Pool;
 use self::queue::{Queue, Stolen};
 
+use std::cell::UnsafeCell;
 use std::io::Error;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -49,6 +54,7 @@ struct Worker {
     queues: Arc<Vec<Queue>>,
     pools: Arc<Vec<Pool>>,
     idx: usize, // the index of this worker's queue and pool in the Vec.
+    rng: UnsafeCell<XorShiftRng>,
 }
 
 // TODO: implement !Sync for Worker.
@@ -57,6 +63,7 @@ impl Worker {
     // pop a job from the worker's queue, or steal one from the queue with the most work.
     unsafe fn pop_or_steal(&self) -> Option<*mut Job> { 
         const ABORTS_BEFORE_BACKOFF: usize = 64;     
+             
         if let Some(job) = self.queues[self.idx].pop() {
             return Some(job);
         }
@@ -67,16 +74,9 @@ impl Worker {
         // B) pop gets priority when racing against "steal".
         self.pools[self.idx].reset();
 
-        let (mut most_work, mut most_idx) = (0, None);
-        for (i, queue) in self.queues.iter().enumerate() {
-            let len = queue.len();
-            if len > most_work {
-                most_work = len;
-                most_idx = Some(i);
-            }
-        }
+        let idx = (*self.rng.get()).gen::<usize>() % self.queues.len();
         
-        if let Some(idx) = most_idx {
+        if idx != self.idx {
             let mut aborts = 0;
             loop {
                 aborts += 1;
@@ -152,7 +152,11 @@ impl Worker {
         let s = make_spawner(self, &counter);
         f(&s);
 
-        while counter.load(Ordering::Acquire) != 0 {
+        //println!("The issue is when you wait for a scope.");
+        
+        loop {
+            let status = counter.load(Ordering::Acquire);
+            if status == 0 { break }
             unsafe { self.run_next() }
         }
     }
@@ -223,7 +227,6 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
             spawner.submit(|s| a = Some(oper_a(s)));
             spawner.submit(|s| b = Some(oper_b(s)));
         });
-        
         (a.unwrap(), b.unwrap())
     }
 }
@@ -246,8 +249,13 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
     }
     // if the worker for this thread panics,
     let _guard = PanicGuard(tx.clone());
+    
+    match rx.recv() {
+        Ok(ToWorker::Start) => {},
+        _ => unreachable!(),
+    };
 
-    let mut state = State::Paused;
+    let mut state = State::Running;
     loop {
         match state {
             State::Running => {
@@ -304,6 +312,7 @@ impl WorkPool {
         let pools = Arc::new((0..n + 1).map(|_| Pool::new()).collect::<Vec<_>>());
         let mut workers = Vec::with_capacity(n);
 
+        let mut rng = thread_rng();
         for i in 0..n {
             let (work_send, work_recv) = channel();
             let (lead_send, lead_recv) = channel();
@@ -312,6 +321,7 @@ impl WorkPool {
                 queues: queues.clone(),
                 pools: pools.clone(),
                 idx: i + 1,
+                rng: UnsafeCell::new(XorShiftRng::from_seed(rng.gen::<[u32; 4]>())),
             };
 
             let builder = thread::Builder::new().name(format!("worker_{}", i));
@@ -330,6 +340,7 @@ impl WorkPool {
                 queues: queues,
                 pools: pools,
                 idx: 0,
+                rng: UnsafeCell::new(XorShiftRng::from_seed(rng.gen::<[u32; 4]>())),
             },
             state: State::Paused,
         };
