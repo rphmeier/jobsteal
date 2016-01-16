@@ -9,7 +9,7 @@ mod pool;
 
 use self::job::Job;
 use self::pool::Pool;
-use self::queue::Queue;
+use self::queue::{Queue, Stolen};
 
 use std::io::Error;
 use std::marker::PhantomData;
@@ -55,7 +55,8 @@ struct Worker {
 
 impl Worker {
     // pop a job from the worker's queue, or steal one from the queue with the most work.
-    unsafe fn pop_or_steal(&self) -> Option<*mut Job> {
+    unsafe fn pop_or_steal(&self) -> Option<*mut Job> { 
+        const ABORTS_BEFORE_BACKOFF: usize = 64;     
         if let Some(job) = self.queues[self.idx].pop() {
             return Some(job);
         }
@@ -74,9 +75,21 @@ impl Worker {
                 most_idx = Some(i);
             }
         }
-
+        
         if let Some(idx) = most_idx {
-            self.queues[idx].steal()
+            let mut aborts = 0;
+            loop {
+                aborts += 1;
+                if aborts > ABORTS_BEFORE_BACKOFF {
+                    return None;
+                }
+                
+                match self.queues[idx].steal() {
+                    Stolen::Success(job) => return Some(job),
+                    Stolen::Empty => return None,
+                    _ => {}
+                }
+            }
         } else {
             None
         }
@@ -88,9 +101,15 @@ impl Worker {
         let mut all_clear = true;
         for (idx, queue) in self.queues.iter().enumerate() {
             if idx != self.idx {
-                while let Some(job) = queue.steal() {
-                    all_clear = false;
-                    unsafe { (*job).call(self) }
+                loop {
+                    match queue.steal() {
+                        Stolen::Success(job) => {
+                            all_clear = false;
+                            unsafe { (*job).call(self) }   
+                        }
+                        Stolen::Empty => break,
+                        Stolen::Abort => {} // ignore aborts in this stage
+                    }
                 }
             } else {
                 while let Some(job) = unsafe { queue.pop() } {
@@ -403,13 +422,6 @@ impl WorkPool {
 
                 Err(_) => panic!("Worker hung up on job system."),
             }
-        }
-
-        // reset the counters in every queue so there's no chance of
-        // overlap.
-        for queue in self.local_worker.queues.iter() {
-            // asserts that len == 0 in debug mode.
-            queue.reset_counters();
         }
 
         // reset all the pools.
