@@ -346,17 +346,7 @@ impl WorkPool {
     pub fn submit<'a, F>(&'a mut self, f: F)
         where F: 'static + Send + FnOnce(&Spawner<'a, 'static>)
     {
-        use std::mem;
-        use std::ptr;
-
-        self.spin_up();
-        // make a job without a counter.
-        unsafe {
-            self.local_worker.submit_internal(ptr::null_mut(), move |worker| {
-                let spawner = make_spawner(&worker, ptr::null_mut());
-                f(&mem::transmute(spawner))
-            })
-        }
+        self.spawner().submit(f);
     }
 
     /// Spin up all the workers, in case they were in a paused
@@ -369,6 +359,15 @@ impl WorkPool {
 
             self.state = State::Running;
         }
+    }
+    
+    /// Get a reference to the local spawner.
+    /// This can only be used to spawn static jobs.
+    pub fn spawner<'a>(&'a mut self) -> Spawner<'a, 'static> {
+        use std::ptr;
+        
+        self.spin_up();
+        make_spawner(&self.local_worker, ptr::null_mut())
     }
 
     // clear all the workers and sets the state to paused.
