@@ -57,8 +57,6 @@ struct Worker {
     rng: UnsafeCell<XorShiftRng>,
 }
 
-// TODO: implement !Sync for Worker.
-
 impl Worker {
     // pop a job from the worker's queue, or steal one from the queue with the most work.
     unsafe fn pop_or_steal(&self) -> Option<*mut Job> { 
