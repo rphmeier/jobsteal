@@ -1,8 +1,6 @@
 //! A work-stealing fork-join queue used to perform processors' work asynchronously.
 //! This is intended to be short-lived. Long running asynchronous tasks should use another method.
 //! For infinite loops, the longest-running of tasks, behavior will be as expected.
-#![cfg_attr(nightly, feature(core_intrinsics))]
-
 extern crate rand;
 
 mod job;
