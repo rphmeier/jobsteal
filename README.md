@@ -11,8 +11,7 @@ This is a basic example to show a simple way to use the job pool.
 use jobsteal::make_pool;
 fn main() {
     // Build a pool with 4 threads, including this one.
-    // This call will fail if you supply this function with '0'.
-    let pool = make_pool(4).unwrap();
+    let mut pool = make_pool(4).unwrap();
 
     // spawn 100 jobs
     for i in 0..100 {
@@ -29,7 +28,7 @@ use jobsteal::make_pool;
 
 fn main(){ 
     // Build a pool
-    let pool = make_pool(4).unwrap();
+    let mut pool = make_pool(4).unwrap();
 
     let mut v = vec![0; 256];
 
@@ -54,6 +53,7 @@ fn main(){
 ```
 
 The spawner passed to the "scope" closure can be used to create more scopes -- as nested as you'd like.
+Each job function gets a spawner passed to it as well, so you can very easily split tasks recursively.
 
 This crate has the unfortunate limitation (for the time being) that only 4096 jobs can be spawned on each thread
 until synchronized. Having this limitation allows jobs to be allocated in contiguous memory, but the benefits of that 
