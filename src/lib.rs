@@ -522,7 +522,11 @@ mod tests {
     
     #[test]
     fn join() {
-        
+        let mut pool = WorkPool::new(4).unwrap();
+        let (mut a, mut b) = (0, 0);
+        pool.spawner().join(|_| a += 1, |_| b += 1);
+        assert_eq!(a, 1);
+        assert_eq!(b, 1);
     }
 
     #[test]
