@@ -198,9 +198,9 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     }
 
     /// Construct a new spawning scope smaller than the one this spawner resides in.
-    pub fn scope<'new, F>(&self, f: F)
+    pub fn scope<'new, F>(&'new self, f: F)
         where 'scope: 'new,
-              F: FnOnce(&Spawner<'pool, 'new>)
+              F: FnOnce(&Spawner<'pool, 'new>) + 'new
     {
         self.worker.scope(f);
     }
@@ -208,19 +208,36 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// Execute two closures, possibly asynchronously, and return their results.
     /// This will block until they are both complete.
     #[allow(non_camel_case_types)]
-    pub fn join<A, B, R_A, R_B>(&self, oper_a: A, oper_b: B) -> (R_A, R_B)
-    where A: Send + FnOnce(&Spawner) -> R_A,
-          B: Send + FnOnce(&Spawner) -> R_B,
-          R_A: Send,
-          R_B: Send 
-    {
-        let mut a = None;
-        let mut b = None;
-        self.scope(|spawner| {
-            spawner.submit(|s| a = Some(oper_a(s)));
-            spawner.submit(|s| b = Some(oper_b(s)));
-        });
-        (a.unwrap(), b.unwrap())
+    pub fn join<'new, A, B, R_A, R_B>(&'new self, oper_a: A, oper_b: B) -> (R_A, R_B)
+    where A: Send + FnOnce(&Spawner<'pool, 'new>) -> R_A + 'new,
+          B: Send + FnOnce(&Spawner<'pool, 'new>) -> R_B + 'new,
+          R_A: Send + 'new,
+          R_B: Send + 'new,
+          'scope: 'new,
+    {   
+        // FIXME: while theoretically it should be possible to 
+        // just pass each spawned job a mutable reference to 
+        // a and b, the borrow checker isn't buying it.
+        
+        // HACK: used to assert that we can send the pointers across the thread boundaries.
+        struct SendPtr<T>(*mut T);
+        unsafe impl<T> Send for SendPtr<T> {}
+        
+        let mut a_dest = None;
+        let mut b_dest = None;
+        
+        let (a_ptr, b_ptr) = (SendPtr(&mut a_dest), SendPtr(&mut b_dest));
+        
+        // the pointers have exclusive access to a_dest and b_dest while the scope is
+        // completing, and the destinations are guaranteed to be live on this stack frame.
+        unsafe {
+            self.scope(|spawner| {
+                spawner.submit(move |s| (*a_ptr.0) = Some(oper_a(s)));
+                spawner.submit(move |s| (*b_ptr.0) = Some(oper_b(s)));
+            });
+        }
+        
+        (a_dest.unwrap(), b_dest.unwrap())
     }
 }
 fn make_spawner<'a, 'b>(worker: &'a Worker, counter: *const AtomicUsize) -> Spawner<'a, 'b> {
@@ -521,10 +538,10 @@ mod tests {
     #[test]
     fn join() {
         let mut pool = WorkPool::new(4).unwrap();
-        let (mut a, mut b) = (0, 0);
-        pool.spawner().join(|_| a += 1, |_| b += 1);
-        assert_eq!(a, 1);
-        assert_eq!(b, 1);
+        let (a, b) = (1, 2);
+        let (r_a, r_b) = pool.spawner().join(|_| a, |_| b);
+        assert_eq!(a, r_a);
+        assert_eq!(b, r_b);
     }
 
     #[test]
