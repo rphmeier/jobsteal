@@ -1,45 +1,93 @@
-use std::cell::Cell;
+use std::cell::RefCell;
 use std::mem;
-use std::ptr;
 
-use super::MAX_JOBS;
+use super::INITIAL_CAPACITY;
 use super::job::Job;
+
+// a chain of vectors where jobs will be allocated in contiguous memory.
+struct BufChain {
+    buf: Vec<Job>,
+    prev: Option<Box<BufChain>>,
+}
+
+impl BufChain {
+    fn new(size: usize) -> Self {
+        BufChain {
+            buf: Vec::with_capacity(size),
+            prev: None,
+        }
+    }
+    
+    // try to allocate this job on the top-level vector.
+    // returns an error if out of space.
+    fn alloc(&mut self, job: Job) -> Result<*mut Job, Job> {
+        let len = self.buf.len();
+        if len == self.buf.capacity() {
+            Err(job)
+        } else {
+            self.buf.push(job);
+            unsafe { Ok(self.buf.get_unchecked_mut(len) as *mut Job) }
+        }
+    }
+    
+    // create a new buffer with double the size of this one, while preserving
+    // this one in the linked list.
+    fn grow(self) -> Self {
+        use std::cmp::max;
+        
+        let new_size = max(self.buf.len(), 4);
+        BufChain {
+            buf: Vec::with_capacity(new_size),
+            prev: Some(Box::new(self)),
+        }
+    }
+    
+    // "shrink" the chain by dropping all old vectors,
+    // and setting the length of the top-level vector to
+    // zero.
+    // This can only be done when there are no pointers
+    // to elements in the pool.
+    unsafe fn shrink(&mut self) {
+        self.prev.take();
+        self.buf.set_len(0);
+    }
+}
 
 // A pool allocator for jobs.
 pub struct Pool {
-    buf: Box<[Job]>,
-    cur: Cell<usize>,
-    last_reset: Cell<usize>,
+    buf: RefCell<BufChain>,
 }
 
 impl Pool {
     pub fn new() -> Self {
         Pool {
-            buf: (0..MAX_JOBS)
-                     .map(|_| unsafe { mem::uninitialized() })
-                     .collect::<Vec<_>>()
-                     .into_boxed_slice(),
-            cur: Cell::new(0),
-            last_reset: Cell::new(0),
+            buf: RefCell::new(BufChain::new(INITIAL_CAPACITY)),
         }
     }
 
     // push a job onto the end of the pool and get a pointer to it.
     // this may only be called from the thread which logically owns this pool.
     pub unsafe fn alloc(&self, job: Job) -> *mut Job {
-        let cur = self.cur.get();
-        let idx = cur & (MAX_JOBS - 1);
-        self.cur.set(cur + 1);
-        assert!(cur < self.last_reset.get() + MAX_JOBS,
-                "Allocated too many jobs since last reset.");
-
-        let slot: *mut Job = &self.buf[idx] as *const Job as *mut _;
-        ptr::write(slot, job);
-        slot
+        let mut buf = self.buf.borrow_mut();
+        match buf.alloc(job) {
+            Ok(job_ptr) => job_ptr,
+            Err(job) => {
+                // grow the buffer, replacing it with a temporary while we grow it.
+                let new_link = mem::replace(&mut *buf, BufChain::new(0)).grow();
+                *buf = new_link;
+                
+                // we just grew the buffer, so we are guaranteed to have capacity.
+                buf.alloc(job).ok().unwrap()
+            }
+        }
     }
 
-    pub fn reset(&self) {
-        self.last_reset.set(self.cur.get());
+    // cull any cached memory on the assumption that there are no existing
+    // pointers to data in this pool.
+    // this function must only be called when it can be proven that
+    // all jobs allocated in this pool have already been run.
+    pub unsafe fn cull_memory(&self) {
+        self.buf.borrow_mut().shrink();
     }
 }
 

@@ -55,11 +55,6 @@ fn main(){
 The spawner passed to the "scope" closure can be used to create more scopes -- as nested as you'd like.
 Each job function gets a spawner passed to it as well, so you can very easily split tasks recursively.
 
-This crate has the unfortunate limitation (for the time being) that only 4096 jobs can be spawned on each thread
-until synchronized. Having this limitation allows jobs to be allocated in contiguous memory, but the benefits of that 
-may not outweigh the costs.
-
-
 ## Panic Safety
 A panic in one worker is intended to propagate to the main thread eventually. However, the code hasn't been vetted for safety, so please try to avoid panicking in your jobs.
 There should probably be a PanicSafe bound on job functions.

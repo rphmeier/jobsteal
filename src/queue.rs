@@ -1,17 +1,19 @@
+//! Lock-free, automatically resizing queue.
+//! Implementation based on http://www.di.ens.fr/~zappa/readings/ppopp13.pdf
+
 use std::mem;
 use std::ptr;
 use std::sync::atomic::{AtomicIsize, AtomicPtr, fence};
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release, SeqCst};
 
-use super::MAX_JOBS;
+use super::INITIAL_CAPACITY;
 use super::job::Job;
-
-/// Implementation based on http://www.di.ens.fr/~zappa/readings/ppopp13.pdf
 
 /// Data storage for the job queue.
 struct Array<T> {
     size: usize,
     ptr: *mut T,
+    prev: Option<Box<Array<T>>>, // linked list of previous arrays.
 }
 
 impl<T> Array<T> {
@@ -24,7 +26,8 @@ impl<T> Array<T> {
         mem::forget(v);
         Array {
             size: size,
-            ptr: ptr
+            ptr: ptr,
+            prev: None,
         }
     }
     
@@ -38,9 +41,35 @@ impl<T> Array<T> {
         ptr::read(self.ptr.offset(off & mask))
     }
     
+    // consume this array and allocate a new one with double the size.
+    // we keep the old arrays around until the top-level one is dropped,
+    // just in case threads load old versions of the array pointer.
+    // because of this, the memory required to store N items converges to 2*sizeof(N)
+    // as N -> inf.
+    unsafe fn grow(self: Box<Self>, b: isize, t: isize) -> Box<Self> {
+        // allocate a new array with double the size.
+        let mut bigger = Box::new(Array::new(self.size * 2));
+        
+        // copy over all the elements in use of the previous array.
+        let mut i = t;
+        while i != b {
+            bigger.put(i, self.get(i));
+            i = i.wrapping_add(1);
+        }
+        
+        // store the current array in the linked list of live arrays.
+        bigger.prev = Some(self);
+        bigger
+    }
+    
     #[inline]
     fn mask(&self) -> isize {
         self.size as isize - 1
+    }
+    
+    // drop the cached arrays stored here.
+    unsafe fn cull(&mut self) {
+        self.prev.take();
     }
 }
 
@@ -75,7 +104,7 @@ unsafe impl Sync for Queue {}
 
 impl Queue {
     pub fn new() -> Self {
-        let buf = unsafe { Box::into_raw(Box::new(Array::new(MAX_JOBS))) };
+        let buf = unsafe { Box::into_raw(Box::new(Array::new(INITIAL_CAPACITY))) };
         Queue {
             buf: AtomicPtr::new(buf),
             top: AtomicIsize::new(0),
@@ -91,11 +120,12 @@ impl Queue {
         
         let b = self.bottom.load(Relaxed);
         let t = self.top.load(Acquire);
-        let a = self.buf.load(Relaxed);
+        let mut a = self.buf.load(Relaxed); 
         
-        if b.wrapping_sub(t) == (*a).size as isize {
-            // buffer is full. should resize here.
-            panic!("Allocated too many jobs since last reset");
+        // need to grow?
+        if b.wrapping_sub(t) >= (*a).size as isize {
+            a = Box::into_raw(Box::from_raw(a).grow(b, t));
+            self.buf.store(a, Release);
         }
         
         (*a).put(b, job);
@@ -173,6 +203,15 @@ impl Queue {
             None
         }
     }
+    
+    // Cull excess memory which has been cached by the queue on the assumption
+    // that no pointers into that memory will be used from this point on.
+    // This should only be called when it can be proven that there are
+    // no pending jobs in the queue.
+    pub unsafe fn cull_memory(&self) {
+        let a = self.buf.load(Relaxed);
+        (*a).cull();
+    }
 }
 
 impl Drop for Queue {
@@ -181,15 +220,14 @@ impl Drop for Queue {
         let t = self.top.load(Relaxed);
         
         let a = unsafe { Box::from_raw(self.buf.load(Relaxed)) };
-        let len = b.wrapping_sub(t);
         
         // to handle the corner case where b has wrapped but t hasn't yet.
         // no point really in dropping *mut Jobs, but this is future proofing for
         // if the type of the queue items is changed.
-        for i in (0..len).map(|off| t.wrapping_add(off)) {
-            unsafe { 
-                drop(a.get(i));
-            }
+        let mut i = t;
+        while i != b {
+            unsafe { drop(a.get(i)) }
+            i = i.wrapping_add(1);
         }
     }
 }

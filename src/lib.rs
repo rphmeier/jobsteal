@@ -23,7 +23,7 @@ use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
-const MAX_JOBS: usize = 4096;
+const INITIAL_CAPACITY: usize = 256;
 
 // messages to workers.
 enum ToWorker {
@@ -65,12 +65,9 @@ impl Worker {
         if let Some(job) = self.queues[self.idx].pop() {
             return Some(job);
         }
-
-        // if the queue is empty (pop failed), we can clear the pool for this queue.
-        // this works only because
-        // A) we push pool-allocated jobs only onto the local queue,
-        // B) pop gets priority when racing against "steal".
-        self.pools[self.idx].reset();
+        
+        // since pop failed, that means that the queue is guaranteed to be empty --
+        // does this mean we can cull the cached arrays from the queue?
 
         let idx = (*self.rng.get()).gen::<usize>() % self.queues.len();
         
@@ -106,7 +103,9 @@ impl Worker {
                             unsafe { (*job).call(self) }   
                         }
                         Stolen::Empty => break,
-                        Stolen::Abort => {} // ignore aborts in this stage
+                        Stolen::Abort => {
+                            all_clear = false;
+                        }
                     }
                 }
             } else {
@@ -131,7 +130,7 @@ impl Worker {
         }
     }
 
-    // This must be called on the thread the worker is active on.
+    // This must be called on the thread the worker is assigned to.
     unsafe fn submit_internal<F>(&self, counter: *const AtomicUsize, f: F)
         where F: Send + FnOnce(&Worker)
     {
@@ -149,8 +148,6 @@ impl Worker {
         let counter = AtomicUsize::new(0);
         let s = make_spawner(self, &counter);
         f(&s);
-
-        //println!("The issue is when you wait for a scope.");
         
         loop {
             let status = counter.load(Ordering::Acquire);
@@ -323,7 +320,7 @@ impl WorkPool {
             };
 
             let builder = thread::Builder::new().name(format!("worker_{}", i));
-            let handle = try!(builder.spawn(|| worker_main(lead_send, work_recv, worker)));
+            let handle = try!(builder.spawn(move || worker_main(lead_send, work_recv, worker)));
 
             workers.push(WorkerHandle {
                 tx: work_send,
@@ -420,22 +417,25 @@ impl WorkPool {
         // the queues are not guaranteed to be empty until the last one responds!
         for worker in &self.workers {
             match worker.rx.recv() {
-                Ok(msg) => {
-                    match msg {
-                        ToLeader::Cleared => continue,
-                        ToLeader::Panicked => {
-                            panicked = true;
-                        }
-                    }
+                Ok(ToLeader::Panicked) => {
+                    panicked = true;
                 }
 
                 Err(_) => panic!("Worker hung up on job system."),
+                _ => {}
             }
         }
 
-        // reset all the pools.
+        // cull all cached memory in the pools and queues.
+        // at this point, we have received notice from all workers
+        // that they have stopped (either willingly or by panic),
+        // and that all jobs have been run.
         for pool in self.local_worker.pools.iter() {
-            pool.reset();
+            unsafe { pool.cull_memory(); }
+        }
+        
+        for queue in self.local_worker.queues.iter() {
+            unsafe { queue.cull_memory(); }
         }
 
         // cleared and panicked workers are waiting for a shutdown message.
@@ -519,6 +519,11 @@ mod tests {
             pool.synchronize();
         }
     }
+    
+    #[test]
+    fn join() {
+        
+    }
 
     #[test]
     fn outlives_pool() {
@@ -533,11 +538,6 @@ mod tests {
                 *i += 1
             }
         });
-    }
-    
-    #[test]
-    fn join() {
-        
     }
 
     #[test]
