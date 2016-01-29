@@ -33,7 +33,7 @@ fn main(){
     let mut v = vec![0; 256];
 
     // Create a scoped spawner.
-    pool.scope(|spawner| {
+    pool.scope(|scope| {
         for chunk in v.chunks_mut(32) {
 
             // Jobs spawned by the scope are only allowed to access
