@@ -138,8 +138,7 @@ impl Worker {
     }
 
     // construct a new spawning scope.
-    // this waits for all jobs submitted internally
-    // to complete.
+    // this waits for all jobs submitted internally to complete.
     fn scope<'pool, 'new, F>(&'pool self, f: F)
         where F: FnOnce(&Spawner<'pool, 'new>)
     {
@@ -156,7 +155,9 @@ impl Worker {
 }
 
 /// A job spawner associated with a specific scope.
-/// Jobs spawned using this may spawn new jobs with the same lifetime.
+///
+/// Jobs spawned using this must outlive the scope.
+/// The `scope` function can be used to create a more focused spawner.
 pub struct Spawner<'pool, 'scope> {
     worker: &'pool Worker,
     counter: *const AtomicUsize,
@@ -165,8 +166,31 @@ pub struct Spawner<'pool, 'scope> {
 }
 
 impl<'pool, 'scope> Spawner<'pool, 'scope> {
-    /// Execute a function which necessarily outlives the scope which
-    /// this resides in.
+    /// Submit a job to be executed by the thread pool.
+    ///
+    /// The job's contents must outlive the spawner's scope. If they don't,
+    /// you can create a more focused scope by calling the `scope` function on the spawner,
+    /// and then submitting the job.
+    ///
+    /// Jobs are passed a handle to the spawner, so work can be split recursively.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use jobsteal::make_pool;
+    /// 
+    /// let mut pool = make_pool(2).unwrap();
+    /// 
+    /// // get a handle to the pool's spawner.
+    /// let spawner = pool.spawner();
+    /// 
+    /// for i in 0..10 {
+    ///     // this spawner can only be used to execute jobs which fully own their data.
+    ///     spawner.submit(move |_| println!("Hello {}", i));
+    /// }
+    /// ```
     pub fn submit<F>(&self, f: F)
         where F: 'scope + Send + FnOnce(&Spawner<'pool, 'scope>)
     {
@@ -198,6 +222,26 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     }
 
     /// Construct a new spawning scope smaller than the one this spawner resides in.
+    ///
+    /// # Examples
+    ///
+    /// Incrementing all the values in a vector.
+    ///
+    /// ```
+    /// use jobsteal::make_pool;
+    /// 
+    /// let mut pool = make_pool(2).unwrap();
+    /// let spawner = pool.spawner();
+    /// 
+    /// let mut v = (0..1024).collect::<Vec<_>>();
+    /// spawner.scope(|scope| {
+    ///     // within this scope, we can spawn jobs that access data outside of it.
+    ///     for i in &mut v {
+    ///         scope.submit(move |_| *i *= 2);
+    ///     }
+    /// });
+    /// // all jobs submitted in the scope are completed before execution resumes here.
+    /// ```
     pub fn scope<'new, F>(&'new self, f: F)
         where 'scope: 'new,
               F: FnOnce(&Spawner<'pool, 'new>) + 'new
@@ -207,6 +251,58 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     
     /// Execute two closures, possibly asynchronously, and return their results.
     /// This will block until they are both complete.
+    ///
+    /// # Examples
+    ///
+    /// Sorting a list in parallel.
+    ///
+    /// ```
+    /// extern crate jobsteal;
+    /// use jobsteal::Spawner;
+    /// fn main() {
+    ///     // a simple quicksort
+    ///     fn quicksort<'a, 'b, T: Ord + Send>(data: &mut [T], spawner: &Spawner<'a, 'b>) {
+    ///     	if data.len() <= 1 { return; }
+    ///     	
+    ///     	// partition the data.
+    ///     	let pivot = partition(data);
+    ///     	let (a, b) = data.split_at_mut(pivot);
+    ///     	
+    ///     	// recursively sort the two parts using the threadpool.
+    ///     	spawner.join(
+    ///     		|inner| quicksort(a, inner),
+    ///     		|inner| quicksort(b, inner),
+    ///     	);
+    ///     }
+    ///     
+    ///     // partition the array such that all elements on the left of the partition
+    ///     // are less than those to the right.
+    ///     fn partition<T: Ord>(data: &mut [T]) -> usize {
+    ///         let pivot = data.len() - 1;
+    ///         let mut i = 0;
+    ///     	
+    ///     	for j in 0..pivot {
+    ///     		if data[j] <= data[pivot] {
+    ///     			data.swap(i, j);
+    ///     			i += 1;
+    ///     		}
+    ///     	}
+    ///     	data.swap(i, pivot);
+    ///     	i
+    ///     }
+    /// 
+    /// 
+    ///     let len = 1024;
+    ///     let mut to_sort = (0..len).rev().collect::<Vec<_>>();
+    ///    
+    ///     let mut pool = jobsteal::make_pool(4).unwrap();
+    ///     quicksort(&mut to_sort, &pool.spawner());
+    /// 
+    ///     for pair in to_sort.windows(2) {
+    /// 	    assert!(pair[1] >= pair[0]);
+    ///     }
+    /// }
+    /// ```
     #[allow(non_camel_case_types)]
     pub fn join<'new, A, B, R_A, R_B>(&'new self, oper_a: A, oper_b: B) -> (R_A, R_B)
     where A: Send + FnOnce(&Spawner<'pool, 'new>) -> R_A + 'new,
@@ -240,6 +336,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
         (a_dest.unwrap(), b_dest.unwrap())
     }
 }
+
 fn make_spawner<'a, 'b>(worker: &'a Worker, counter: *const AtomicUsize) -> Spawner<'a, 'b> {
     Spawner {
         worker: worker,
@@ -305,9 +402,13 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
     }
 }
 
-/// The work pool manages worker threads in a 
-/// work-stealing fork-join thread pool.
-// The fields here are put in Vecs for cache contiguity.
+/// The work pool manages worker threads in a work-stealing fork-join thread pool.
+///
+/// You can submit jobs to the pool directly using `WorkPool::submit`. This has similar
+/// semantics to the standard library `thread::spawn`, in that the work provided must 
+/// fully own its data.
+///
+/// `WorkPool` also provides a facility for spawning scoped jobs via the "scope" function.
 pub struct WorkPool {
     workers: Vec<WorkerHandle>,
     local_worker: Worker,
@@ -316,6 +417,11 @@ pub struct WorkPool {
 
 impl WorkPool {
     /// Creates a work pool with `n` worker threads.
+    /// 
+    /// You can create a pool with 0 worker threads,
+    /// but jobs won't be run until the pool is given an opportunity to join them.
+    /// This will occur at scope boundaries, the pool's destructor, or in calls to
+    /// `synchronize`.
     pub fn new(n: usize) -> Result<Self, Error> {
         // one extra queue and pool for the job system.
         let queues = Arc::new((0..n + 1).map(|_| Queue::new()).collect::<Vec<_>>());
@@ -371,22 +477,31 @@ impl WorkPool {
     }
 
     /// Create a new spawning scope for submitting jobs.
-    /// Any jobs submitted in this scope will be completed
-    /// by the end of this function call.
+    ///
+    /// This is shorthand for `my_pool.spawner().scope(|scope| ...)`.
+    ///
+    /// Any jobs submitted in this scope will be completed by the end of this function call.
+    /// See Spawner::scope for a more detailed description.
     pub fn scope<'pool, 'new, F>(&'pool mut self, f: F)
         where F: FnOnce(&Spawner<'pool, 'new>)
     {
         self.spin_up();
+        
         self.local_worker.scope(f);
     }
 
     /// Execute a job which strictly owns its contents.
-    /// The execution of this function may be deferred to beyond
-    /// this function call.
-    /// In the general case, it is safe to submit jobs which only
-    /// strictly outlive the pool. However, there is always the
-    /// chance that the pool could be leaked, violating the invariant
-    /// that the job is completed before the borrow of the data is.
+    ///
+    /// The execution of this function may be deferred beyond this function call,
+    /// to as far as either the next call to `synchronize` or the pool's destructor.
+    ///
+    /// This is shorthand for `my_pool.spawner().submit(my_job);`
+    ///
+    /// # Safety
+    ///
+    /// In the general case, it is safe to submit jobs which only strictly outlive the pool.
+    /// However, there is always the chance that the pool could be leaked, violating the
+    /// invariant that the job is completed while its data is still alive.
     pub fn submit<'a, F>(&'a mut self, f: F)
         where F: 'static + Send + FnOnce(&Spawner<'a, 'static>)
     {
@@ -405,8 +520,11 @@ impl WorkPool {
         }
     }
     
-    /// Get a reference to the local spawner.
-    /// This can only be used to spawn static jobs.
+    /// Get the pool's spawner.
+    ///
+    /// This will initally only accept jobs which outive 'static,
+    /// but the scope can be focused further.
+    /// See the `Spawner` documentation for more information.
     pub fn spawner<'a>(&'a mut self) -> Spawner<'a, 'static> {
         use std::ptr;
         
@@ -481,6 +599,11 @@ impl Drop for WorkPool {
 }
 
 /// Create a pool with `n` worker threads.
+///
+/// You can create a pool with 0 worker threads,
+/// but jobs won't be run until the pool is given an opportunity to join them.
+/// This will occur at scope boundaries, the pool's destructor, or in manual calls to
+/// `synchronize`.
 pub fn make_pool(n: usize) -> Result<WorkPool, Error> {
     WorkPool::new(n)
 }
