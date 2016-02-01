@@ -139,18 +139,22 @@ impl Worker {
 
     // construct a new spawning scope.
     // this waits for all jobs submitted internally to complete.
-    fn scope<'pool, 'new, F>(&'pool self, f: F)
-        where F: FnOnce(&Spawner<'pool, 'new>)
+    fn scope<'pool, 'new, F, R>(&'pool self, f: F) -> R
+        where F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
+              R: 'new,
+        
     {
         let counter = AtomicUsize::new(0);
         let s = make_spawner(self, &counter);
-        f(&s);
+        let res = f(&s);
         
         loop {
             let status = counter.load(Ordering::Acquire);
             if status == 0 { break }
             unsafe { self.run_next() }
         }
+        
+        res
     }
 }
 
@@ -242,11 +246,12 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// });
     /// // all jobs submitted in the scope are completed before execution resumes here.
     /// ```
-    pub fn scope<'new, F>(&'new self, f: F)
+    pub fn scope<'new, F, R>(&'new self, f: F) -> R
         where 'scope: 'new,
-              F: FnOnce(&Spawner<'pool, 'new>) + 'new
+        F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
+        R: 'new
     {
-        self.worker.scope(f);
+        self.worker.scope(f)
     }
     
     /// Execute two closures, possibly asynchronously, and return their results.
@@ -482,12 +487,13 @@ impl WorkPool {
     ///
     /// Any jobs submitted in this scope will be completed by the end of this function call.
     /// See Spawner::scope for a more detailed description.
-    pub fn scope<'pool, 'new, F>(&'pool mut self, f: F)
-        where F: FnOnce(&Spawner<'pool, 'new>)
+    pub fn scope<'pool, 'new, F, R>(&'pool mut self, f: F) -> R
+        where F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
+              R: 'new,
     {
         self.spin_up();
         
-        self.local_worker.scope(f);
+        self.local_worker.scope(f)
     }
 
     /// Execute a job which strictly owns its contents.
@@ -680,6 +686,15 @@ mod tests {
                 *i += 1
             }
         });
+    }
+    
+    #[test]
+    fn scope_return() {
+        let mut pool = WorkPool::new(4).unwrap();
+        
+        let x = pool.scope(|_| 0);
+        
+        assert_eq!(x, 0);
     }
 
     #[test]
