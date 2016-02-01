@@ -617,91 +617,99 @@ pub fn make_pool(n: usize) -> Result<WorkPool, Error> {
 #[cfg(test)]
 mod tests {
     use super::WorkPool;
+    
+    fn pool_harness<F>(f: F) where F: Fn(&mut WorkPool) {
+        for i in 0..32 {
+            let mut pool = WorkPool::new(i).unwrap();
+            f(&mut pool);
+        }
+    }
 
     #[test]
     fn creation_destruction() {
-        for i in 0..32 {
-            let _ = WorkPool::new(i).unwrap();
-        }
+        pool_harness(|_| {}); // just do nothing
     }
 
     #[test]
     fn split_work() {
-        let mut pool = WorkPool::new(4).unwrap();
-        let mut v = vec![0; 1024];
-        pool.scope(|spawner| {
-            for (idx, v) in v.iter_mut().enumerate() {
-                spawner.submit(move |_| {
-                    *v += idx;
-                });
-            }
+        pool_harness(|pool| {
+            let mut v = vec![0; 1024];
+            pool.scope(|spawner| {
+                for (idx, v) in v.iter_mut().enumerate() {
+                    spawner.submit(move |_| {
+                        *v += idx;
+                    });
+                }
+            });
+        
+            assert_eq!(v, (0..1024).collect::<Vec<_>>());
         });
-
-        assert_eq!(v, (0..1024).collect::<Vec<_>>());
     }
 
     #[test]
     fn multilevel_scoping() {
-        let mut pool = WorkPool::new(4).unwrap();
-        pool.scope(|spawner| {
-            let mut v = vec![0; 256];
-            spawner.scope(|s| {
-                for i in &mut v {
-                    s.submit(move |_| *i += 1)
-                }
-            });
-            // job is forcibly joined here.
-
-            assert_eq!(v, (0..256).map(|_| 1).collect::<Vec<_>>())
-        }); // any other jobs would be forcibly joined here.
+        pool_harness(|pool| {
+            pool.scope(|spawner| {
+                let mut v = vec![0; 256];
+                spawner.scope(|s| {
+                    for i in &mut v {
+                        s.submit(move |_| *i += 1)
+                    }
+                });
+                // job is forcibly joined here.
+    
+                assert_eq!(v, (0..256).map(|_| 1).collect::<Vec<_>>())
+            }); // any other jobs would be forcibly joined here.
+        });
     }
 
     #[test]
     fn multiple_synchronizations() {
-        let mut pool = WorkPool::new(4).unwrap();
-        for _ in 0..100 {
-            pool.synchronize();
-        }
+        pool_harness(|pool| {
+            for _ in 0..100 {
+                pool.synchronize();
+            }
+        });
     }
     
     #[test]
     fn join() {
-        let mut pool = WorkPool::new(4).unwrap();
-        let (a, b) = (1, 2);
-        let (r_a, r_b) = pool.spawner().join(|_| a, |_| b);
-        assert_eq!(a, r_a);
-        assert_eq!(b, r_b);
+        pool_harness(|pool| {
+            let (a, b) = (1, 2);
+            let (r_a, r_b) = pool.spawner().join(|_| a, |_| b);
+            assert_eq!(a, r_a);
+            assert_eq!(b, r_b);
+        });
     }
 
     #[test]
     fn outlives_pool() {
-        let mut v = vec![0; 256];
-        let mut pool = WorkPool::new(4).unwrap();
-
-        // can only execute 'static functions here -- otherwise,
-        // some person might make the dumb mistake of calling `forget` the
-        // pool before it has the chance to run all submitted jobs.
-        pool.submit(move |_| {
-            for i in &mut v {
-                *i += 1
-            }
+        let v = vec![0; 256];
+        pool_harness(|pool| {
+            let mut v = v.clone();
+            // can only execute 'static functions here -- otherwise,
+            // some person might make the dumb mistake of calling `forget` the
+            // pool before it has the chance to run all submitted jobs.
+            pool.submit(move |_| {
+                for i in &mut v {
+                    *i += 1
+                }
+            });
         });
     }
     
     #[test]
     fn scope_return() {
-        let mut pool = WorkPool::new(4).unwrap();
-        
-        let x = pool.scope(|_| 0);
-        
-        assert_eq!(x, 0);
+        pool_harness(|pool| {
+            let x = pool.scope(|_| 0);
+            assert_eq!(x, 0); 
+        });
     }
 
     #[test]
     #[should_panic]
     fn job_panic() {
-        let mut pool = WorkPool::new(4).unwrap();
-
+        let mut pool = WorkPool::new(1).unwrap();
         pool.submit(|_| panic!("Eep!"));
     }
 }
