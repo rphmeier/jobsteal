@@ -170,7 +170,7 @@ pub struct Spawner<'pool, 'scope> {
 }
 
 impl<'pool, 'scope> Spawner<'pool, 'scope> {
-    /// Submit a job to be executed by the thread pool.
+    /// Submit a job to be executed by the thread pool and given access to the thread pool.
     ///
     /// The job's contents must outlive the spawner's scope. If they don't,
     /// you can create a more focused scope by calling the `scope` function on the spawner,
@@ -190,12 +190,14 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// // get a handle to the pool's spawner.
     /// let spawner = pool.spawner();
     /// 
-    /// for i in 0..10 {
-    ///     // this spawner can only be used to execute jobs which fully own their data.
-    ///     spawner.submit(move |_| println!("Hello {}", i));
-    /// }
+    /// // execute a job which can spawn other jobs.
+    /// spawner.recurse(|inner| {
+    ///     for i in 0..10 {
+    ///         inner.submit(move || println!("{}", i));    
+    ///     }
+    /// })
     /// ```
-    pub fn submit<F>(&self, f: F)
+    pub fn recurse<F>(&self, f: F)
         where F: 'scope + Send + FnOnce(Spawner<'pool, 'scope>)
     {
         use std::mem;
@@ -224,6 +226,43 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
             });
         }
     }
+    
+    /// Submit a job to be executed by the thread pool.
+    ///
+    /// The job's contents must outlive the spawner's scope. If they don't,
+    /// you can create a more focused scope by calling the `scope` function on the spawner,
+    /// and then submitting the job.
+    ///
+    /// Jobs are passed a handle to the spawner, so work can be split recursively.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use jobsteal::make_pool;
+    /// 
+    /// let mut pool = make_pool(2).unwrap();
+    /// 
+    /// // get a handle to the pool's spawner.
+    /// let spawner = pool.spawner();
+    /// 
+    /// for i in 0..10 {
+    ///     // this spawner can only be used to execute jobs which fully own their data.
+    ///     spawner.submit(move || println!("Hello {}", i));
+    /// }
+    /// ```
+    pub fn submit<F>(&self, f: F) where F: 'scope + Send + FnOnce() {
+        if !self.counter.is_null() {
+            unsafe { (*self.counter).fetch_add(1, Ordering::AcqRel) };
+        }
+        
+        unsafe {
+            self.worker.submit_internal(self.counter, move |_| {
+                f();
+            });
+        }
+    }
 
     /// Construct a new spawning scope smaller than the one this spawner resides in.
     ///
@@ -241,7 +280,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// spawner.scope(|scope| {
     ///     // within this scope, we can spawn jobs that access data outside of it.
     ///     for i in &mut v {
-    ///         scope.submit(move |_| *i *= 2);
+    ///         scope.submit(move || *i *= 2);
     ///     }
     /// });
     /// // all jobs submitted in the scope are completed before execution resumes here.
@@ -333,8 +372,8 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
         // completing, and the destinations are guaranteed to be live on this stack frame.
         unsafe {
             self.scope(|spawner| {
-                spawner.submit(move |s| (*a_ptr.0) = Some(oper_a(s)));
-                spawner.submit(move |s| (*b_ptr.0) = Some(oper_b(s)));
+                spawner.recurse(move |s| (*a_ptr.0) = Some(oper_a(s)));
+                spawner.recurse(move |s| (*b_ptr.0) = Some(oper_b(s)));
             });
         }
         
@@ -502,6 +541,24 @@ impl Pool {
         self.local_worker.scope(f)
     }
 
+    /// Execute a job which strictly owns its contents and is to be given access to the thread pool.
+    ///
+    /// The execution of this function may be deferred beyond this function call,
+    /// to as far as either the next call to `synchronize` or the pool's destructor.
+    ///
+    /// This is shorthand for `my_pool.spawner().recurse(my_job);`
+    ///
+    /// # Safety
+    ///
+    /// In the general case, it is safe to submit jobs which only strictly outlive the pool.
+    /// However, there is always the chance that the pool could be leaked, violating the
+    /// invariant that the job is completed while its data is still alive.
+    pub fn recurse<'a, F>(&'a mut self, f: F)
+        where F: 'static + Send + FnOnce(Spawner<'a, 'static>)
+    {
+        self.spawner().recurse(f);
+    }
+    
     /// Execute a job which strictly owns its contents.
     ///
     /// The execution of this function may be deferred beyond this function call,
@@ -515,7 +572,7 @@ impl Pool {
     /// However, there is always the chance that the pool could be leaked, violating the
     /// invariant that the job is completed while its data is still alive.
     pub fn submit<'a, F>(&'a mut self, f: F)
-        where F: 'static + Send + FnOnce(Spawner<'a, 'static>)
+        where F: 'static + Send + FnOnce()
     {
         self.spawner().submit(f);
     }
@@ -642,7 +699,7 @@ mod tests {
             let mut v = vec![0; 1024];
             pool.scope(|spawner| {
                 for (idx, v) in v.iter_mut().enumerate() {
-                    spawner.submit(move |_| {
+                    spawner.submit(move || {
                         *v += idx;
                     });
                 }
@@ -659,7 +716,7 @@ mod tests {
                 let mut v = vec![0; 256];
                 spawner.scope(|s| {
                     for i in &mut v {
-                        s.submit(move |_| *i += 1)
+                        s.submit(move || *i += 1)
                     }
                 });
                 // job is forcibly joined here.
@@ -696,7 +753,7 @@ mod tests {
             // can only execute 'static functions here -- otherwise,
             // some person might make the dumb mistake of calling `forget` the
             // pool before it has the chance to run all submitted jobs.
-            pool.submit(move |_| {
+            pool.submit(move || {
                 for i in &mut v {
                     *i += 1
                 }
@@ -716,6 +773,6 @@ mod tests {
     #[should_panic]
     fn job_panic() {
         let mut pool = Pool::new(1).unwrap();
-        pool.submit(|_| panic!("Eep!"));
+        pool.submit(|| panic!("Eep!"));
     }
 }
