@@ -54,13 +54,13 @@ impl BufChain {
 }
 
 // A pool allocator for jobs.
-pub struct Pool {
+pub struct Arena {
     buf: RefCell<BufChain>,
 }
 
-impl Pool {
+impl Arena {
     pub fn new() -> Self {
-        Pool {
+        Arena {
             buf: RefCell::new(BufChain::new(INITIAL_CAPACITY)),
         }
     }
@@ -91,5 +91,5 @@ impl Pool {
     }
 }
 
-unsafe impl Send for Pool {}
-unsafe impl Sync for Pool {}
+unsafe impl Send for Arena {}
+unsafe impl Sync for Arena {}

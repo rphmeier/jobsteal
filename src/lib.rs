@@ -3,14 +3,14 @@
 //! For infinite loops, the longest-running of tasks, behavior will be as expected.
 extern crate rand;
 
+mod arena;
 mod job;
 mod queue;
-mod pool;
 
 use rand::{Rng, SeedableRng, thread_rng, XorShiftRng};
 
 use self::job::Job;
-use self::pool::Pool;
+use self::arena::Arena;
 use self::queue::{Queue, Stolen};
 
 use std::cell::UnsafeCell;
@@ -27,7 +27,7 @@ const INITIAL_CAPACITY: usize = 256;
 enum ToWorker {
     Start, // start
     Clear, // run all jobs to completion, then reset the pool.
-    Shutdown, // all workers are clear and no jobs are running. safe to tear down pools.
+    Shutdown, // all workers are clear and no jobs are running. safe to tear down arenas and queues.
 }
 // messages to the leader from workers.
 enum ToLeader {
@@ -50,7 +50,7 @@ enum State {
 
 struct Worker {
     queues: Arc<Vec<Queue>>,
-    pools: Arc<Vec<Pool>>,
+    arenas: Arc<Vec<Arena>>,
     idx: usize, // the index of this worker's queue and pool in the Vec.
     rng: UnsafeCell<XorShiftRng>,
 }
@@ -133,7 +133,7 @@ impl Worker {
         where F: Send + FnOnce(&Worker)
     {
         let job = Job::new(counter, f);
-        let job_ptr = self.pools[self.idx].alloc(job);
+        let job_ptr = self.arenas[self.idx].alloc(job);
         self.queues[self.idx].push(job_ptr);
     }
 
@@ -217,7 +217,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
                 // make a new spawner associated with the same scope,
                 // but with the correct worker for the thread -- so if
                 // this job spawns any children, we won't break any
-                // invariants by accessing other workers' queues/pools
+                // invariants by accessing other workers' queues/arenas
                 // in unexpected ways.
                 let spawner = make_spawner(worker, count_ptr);
                 f(mem::transmute(spawner))
@@ -415,19 +415,19 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
 
 /// The work pool manages worker threads in a work-stealing fork-join thread pool.
 ///
-/// You can submit jobs to the pool directly using `WorkPool::submit`. This has similar
+/// You can submit jobs to the pool directly using `Pool::submit`. This has similar
 /// semantics to the standard library `thread::spawn`, in that the work provided must 
 /// fully own its data.
 ///
-/// `WorkPool` also provides a facility for spawning scoped jobs via the "scope" function.
-pub struct WorkPool {
+/// `Pool` also provides a facility for spawning scoped jobs via the "scope" function.
+pub struct Pool {
     workers: Vec<WorkerHandle>,
     local_worker: Worker,
     state: State,
 }
 
-impl WorkPool {
-    /// Creates a work pool with `n` worker threads.
+impl Pool {
+    /// Creates a pool with `n` worker threads.
     /// 
     /// You can create a pool with 0 worker threads,
     /// but jobs won't be run until the pool is given an opportunity to join them.
@@ -436,7 +436,7 @@ impl WorkPool {
     pub fn new(n: usize) -> Result<Self, Error> {
         // one extra queue and pool for the job system.
         let queues = Arc::new((0..n + 1).map(|_| Queue::new()).collect::<Vec<_>>());
-        let pools = Arc::new((0..n + 1).map(|_| Pool::new()).collect::<Vec<_>>());
+        let arenas = Arc::new((0..n + 1).map(|_| Arena::new()).collect::<Vec<_>>());
         let mut workers = Vec::with_capacity(n);
 
         let mut rng = thread_rng();
@@ -446,7 +446,7 @@ impl WorkPool {
 
             let worker = Worker {
                 queues: queues.clone(),
-                pools: pools.clone(),
+                arenas: arenas.clone(),
                 idx: i + 1,
                 rng: UnsafeCell::new(XorShiftRng::from_seed(rng.gen::<[u32; 4]>())),
             };
@@ -461,11 +461,11 @@ impl WorkPool {
             });
         }
 
-        let mut pool = WorkPool {
+        let mut pool = Pool {
             workers: workers,
             local_worker: Worker {
                 queues: queues,
-                pools: pools,
+                arenas: arenas,
                 idx: 0,
                 rng: UnsafeCell::new(XorShiftRng::from_seed(rng.gen::<[u32; 4]>())),
             },
@@ -571,12 +571,12 @@ impl WorkPool {
             }
         }
 
-        // cull all cached memory in the pools and queues.
+        // cull all cached memory in the arenas and queues.
         // at this point, we have received notice from all workers
         // that they have stopped (either willingly or by panic),
         // and that all jobs have been run.
-        for pool in self.local_worker.pools.iter() {
-            unsafe { pool.cull_memory(); }
+        for arena in self.local_worker.arenas.iter() {
+            unsafe { arena.cull_memory(); }
         }
         
         for queue in self.local_worker.queues.iter() {
@@ -593,7 +593,7 @@ impl WorkPool {
     }
 }
 
-impl Drop for WorkPool {
+impl Drop for Pool {
     fn drop(&mut self) {
         // finish all work.
         self.clear_all();
@@ -616,17 +616,17 @@ impl Drop for WorkPool {
 /// but jobs won't be run until the pool is given an opportunity to join them.
 /// This will occur at scope boundaries, the pool's destructor, or in manual calls to
 /// `synchronize`.
-pub fn make_pool(n: usize) -> Result<WorkPool, Error> {
-    WorkPool::new(n)
+pub fn make_pool(n: usize) -> Result<Pool, Error> {
+    Pool::new(n)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::WorkPool;
+    use super::Pool;
     
-    fn pool_harness<F>(f: F) where F: Fn(&mut WorkPool) {
+    fn pool_harness<F>(f: F) where F: Fn(&mut Pool) {
         for i in 0..32 {
-            let mut pool = WorkPool::new(i).unwrap();
+            let mut pool = Pool::new(i).unwrap();
             f(&mut pool);
         }
     }
@@ -715,7 +715,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn job_panic() {
-        let mut pool = WorkPool::new(1).unwrap();
+        let mut pool = Pool::new(1).unwrap();
         pool.submit(|_| panic!("Eep!"));
     }
 }
