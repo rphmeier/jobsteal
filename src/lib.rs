@@ -348,34 +348,19 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// }
     /// ```
     #[allow(non_camel_case_types)]
-    pub fn join<'new, A, B, R_A, R_B>(&'new self, oper_a: A, oper_b: B) -> (R_A, R_B)
-    where A: Send + FnOnce(Spawner<'pool, 'new>) -> R_A + 'new,
-          B: Send + FnOnce(Spawner<'pool, 'new>) -> R_B + 'new,
-          R_A: Send + 'new,
-          R_B: Send + 'new,
-          'scope: 'new,
+    pub fn join<A, B, R_A, R_B>(&self, oper_a: A, oper_b: B) -> (R_A, R_B)
+    where A: Send + for<'new> FnOnce(Spawner<'pool, 'new>) -> R_A,
+          B: Send + for<'new> FnOnce(Spawner<'pool, 'new>) -> R_B,
+          R_A: Send,
+          R_B: Send,
     {   
-        // FIXME: while theoretically it should be possible to 
-        // just pass each spawned job a mutable reference to 
-        // a and b, the borrow checker isn't buying it.
-        
-        // HACK: used to assert that we can send the pointers across the thread boundaries.
-        struct SendPtr<T>(*mut T);
-        unsafe impl<T> Send for SendPtr<T> {}
-        
         let mut a_dest = None;
         let mut b_dest = None;
         
-        let (a_ptr, b_ptr) = (SendPtr(&mut a_dest), SendPtr(&mut b_dest));
-        
-        // the pointers have exclusive access to a_dest and b_dest while the scope is
-        // completing, and the destinations are guaranteed to be live on this stack frame.
-        unsafe {
-            self.scope(|spawner| {
-                spawner.recurse(move |s| (*a_ptr.0) = Some(oper_a(s)));
-                spawner.recurse(move |s| (*b_ptr.0) = Some(oper_b(s)));
-            });
-        }
+        self.scope(|scope| {
+            a_dest = Some(oper_a(scope.clone()));
+            b_dest = Some(oper_b(scope));
+        });
         
         (a_dest.unwrap(), b_dest.unwrap())
     }
@@ -721,7 +706,7 @@ mod tests {
                 });
                 // job is forcibly joined here.
     
-                assert_eq!(v, (0..256).map(|_| 1).collect::<Vec<_>>())
+                assert_eq!(v, vec![1; 256]);
             }); // any other jobs would be forcibly joined here.
         });
     }
@@ -742,6 +727,22 @@ mod tests {
             let (r_a, r_b) = pool.spawner().join(|_| a, |_| b);
             assert_eq!(a, r_a);
             assert_eq!(b, r_b);
+        });
+    }
+    
+    #[test]
+    fn join_scoping() {
+        pool_harness(|pool| {
+            let mut v = vec![0; 256];
+            {           
+                let (a, b) = v.split_at_mut(128);
+                pool.spawner().join(
+                    |_| for i in a { *i += 1},
+                    |_| for i in b { *i += 1},
+                );
+            }
+            
+            assert_eq!(v, vec![1; 256])
         });
     }
 
