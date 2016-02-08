@@ -342,6 +342,12 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     }
 }
 
+impl<'a, 'b> Clone for Spawner<'a, 'b> {
+    fn clone(&self) -> Self {
+        make_spawner(self.worker, self.counter)
+    }
+}
+
 fn make_spawner<'a, 'b>(worker: &'a Worker, counter: *const AtomicUsize) -> Spawner<'a, 'b> {
     Spawner {
         worker: worker,
