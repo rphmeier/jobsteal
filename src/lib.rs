@@ -140,13 +140,13 @@ impl Worker {
     // construct a new spawning scope.
     // this waits for all jobs submitted internally to complete.
     fn scope<'pool, 'new, F, R>(&'pool self, f: F) -> R
-        where F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
+        where F: 'new + FnOnce(Spawner<'pool, 'new>) -> R,
               R: 'new,
         
     {
         let counter = AtomicUsize::new(0);
         let s = make_spawner(self, &counter);
-        let res = f(&s);
+        let res = f(s);
         
         loop {
             let status = counter.load(Ordering::Acquire);
@@ -196,7 +196,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// }
     /// ```
     pub fn submit<F>(&self, f: F)
-        where F: 'scope + Send + FnOnce(&Spawner<'pool, 'scope>)
+        where F: 'scope + Send + FnOnce(Spawner<'pool, 'scope>)
     {
         use std::mem;
 
@@ -220,7 +220,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
                 // invariants by accessing other workers' queues/pools
                 // in unexpected ways.
                 let spawner = make_spawner(worker, count_ptr);
-                f(&mem::transmute(spawner))
+                f(mem::transmute(spawner))
             });
         }
     }
@@ -248,7 +248,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// ```
     pub fn scope<'new, F, R>(&'new self, f: F) -> R
         where 'scope: 'new,
-        F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
+        F: 'new + FnOnce(Spawner<'pool, 'new>) -> R,
         R: 'new
     {
         self.worker.scope(f)
@@ -266,7 +266,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// use jobsteal::Spawner;
     /// fn main() {
     ///     // a simple quicksort
-    ///     fn quicksort<'a, 'b, T: Ord + Send>(data: &mut [T], spawner: &Spawner<'a, 'b>) {
+    ///     fn quicksort<'a, 'b, T: Ord + Send>(data: &mut [T], spawner: Spawner<'a, 'b>) {
     ///     	if data.len() <= 1 { return; }
     ///     	
     ///     	// partition the data.
@@ -301,7 +301,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     ///     let mut to_sort = (0..len).rev().collect::<Vec<_>>();
     ///    
     ///     let mut pool = jobsteal::make_pool(4).unwrap();
-    ///     quicksort(&mut to_sort, &pool.spawner());
+    ///     quicksort(&mut to_sort, pool.spawner());
     /// 
     ///     for pair in to_sort.windows(2) {
     /// 	    assert!(pair[1] >= pair[0]);
@@ -310,8 +310,8 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// ```
     #[allow(non_camel_case_types)]
     pub fn join<'new, A, B, R_A, R_B>(&'new self, oper_a: A, oper_b: B) -> (R_A, R_B)
-    where A: Send + FnOnce(&Spawner<'pool, 'new>) -> R_A + 'new,
-          B: Send + FnOnce(&Spawner<'pool, 'new>) -> R_B + 'new,
+    where A: Send + FnOnce(Spawner<'pool, 'new>) -> R_A + 'new,
+          B: Send + FnOnce(Spawner<'pool, 'new>) -> R_B + 'new,
           R_A: Send + 'new,
           R_B: Send + 'new,
           'scope: 'new,
@@ -488,7 +488,7 @@ impl WorkPool {
     /// Any jobs submitted in this scope will be completed by the end of this function call.
     /// See Spawner::scope for a more detailed description.
     pub fn scope<'pool, 'new, F, R>(&'pool mut self, f: F) -> R
-        where F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
+        where F: 'new + FnOnce(Spawner<'pool, 'new>) -> R,
               R: 'new,
     {
         self.spin_up();
@@ -509,7 +509,7 @@ impl WorkPool {
     /// However, there is always the chance that the pool could be leaked, violating the
     /// invariant that the job is completed while its data is still alive.
     pub fn submit<'a, F>(&'a mut self, f: F)
-        where F: 'static + Send + FnOnce(&Spawner<'a, 'static>)
+        where F: 'static + Send + FnOnce(Spawner<'a, 'static>)
     {
         self.spawner().submit(f);
     }
