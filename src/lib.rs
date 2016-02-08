@@ -457,7 +457,7 @@ impl Pool {
     /// but jobs won't be run until the pool is given an opportunity to join them.
     /// This will occur at scope boundaries, the pool's destructor, or in calls to
     /// `synchronize`.
-    pub fn new(n: usize) -> Result<Self, Error> {
+    fn new(n: usize) -> Result<Self, Error> {
         // one extra queue and pool for the job system.
         let queues = Arc::new((0..n + 1).map(|_| Queue::new()).collect::<Vec<_>>());
         let arenas = Arc::new((0..n + 1).map(|_| Arena::new()).collect::<Vec<_>>());
