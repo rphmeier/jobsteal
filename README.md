@@ -16,7 +16,7 @@ fn main() {
     // spawn 100 jobs
     for i in 0..100 {
         // You can only submit jobs with a static lifetime this way.
-        pool.submit(move |_| println!("Job {}", i));
+        pool.submit(move || println!("Job {}", i));
     }
 }
 ```
@@ -26,7 +26,7 @@ Here's a more useful example where we split up a vector into chunks and submit a
 ```rust
 use jobsteal::make_pool;
 
-fn main(){ 
+fn main(){
     // Build a pool
     let mut pool = make_pool(4).unwrap();
 
@@ -38,7 +38,7 @@ fn main(){
 
             // Jobs spawned by the scope are only allowed to access
             // data which strictly outlives the call to "scope".
-            scope.submit(move |_| {
+            scope.submit(move || {
                 for i in chunk { *i += 1 }
             });
         }
@@ -53,8 +53,9 @@ fn main(){
 ```
 
 The spawner passed to the "scope" closure can be used to create more scopes -- as nested as you'd like.
-Each job function gets a spawner passed to it as well, so you can very easily split tasks recursively.
+Each job function can have a spawner passed to it as well by spawning jobs with `Spawner::recurse`, so you can very easily split tasks recursively.
+Recursive work-splitting typically leads to much better work distribution between worker threads.
 
 ## Panic Safety
 A panic in one worker is intended to propagate to the main thread eventually. However, the code hasn't been vetted for safety, so please try to avoid panicking in your jobs.
-There should probably be a PanicSafe bound on job functions.
+There should probably be a PanicSafe bound on job functions. This would require nightly, and PanicSafe is also really cumbersome.
