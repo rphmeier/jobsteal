@@ -784,4 +784,11 @@ mod tests {
         let mut pool = Pool::new(1).unwrap();
         pool.submit(|| panic!("Eep!"));
     }
+
+    #[test]
+    fn clone_static_spawner() {
+        pool_harness(|pool| {
+           let _ = pool.spawner().clone();
+        });
+    }
 }
