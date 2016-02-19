@@ -56,6 +56,6 @@ The spawner passed to the "scope" closure can be used to create more scopes -- a
 Each job function can have a spawner passed to it as well by spawning jobs with `Spawner::recurse`, so you can very easily split tasks recursively.
 Recursive work-splitting typically leads to much better work distribution between worker threads.
 
-## Panic Safety
+## Recover Safety
 A panic in one worker is intended to propagate to the main thread eventually. However, the code hasn't been vetted for safety, so please try to avoid panicking in your jobs.
-There should probably be a PanicSafe bound on job functions. This would require nightly, and PanicSafe is also really cumbersome.
+There should probably be a RecoverSafe bound on job functions. This would require nightly, and RecoverSafe is also really cumbersome.
