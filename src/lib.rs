@@ -57,18 +57,18 @@ struct Worker {
 
 impl Worker {
     // pop a job from the worker's queue, or steal one from the queue with the most work.
-    unsafe fn pop_or_steal(&self) -> Option<*mut Job> { 
-        const ABORTS_BEFORE_BACKOFF: usize = 64;     
-             
+    unsafe fn pop_or_steal(&self) -> Option<*mut Job> {
+        const ABORTS_BEFORE_BACKOFF: usize = 64;
+
         if let Some(job) = self.queues[self.idx].pop() {
             return Some(job);
         }
-        
+
         // since pop failed, that means that the queue is guaranteed to be empty --
         // does this mean we can cull the cached arrays from the queue?
 
         let idx = (*self.rng.get()).gen::<usize>() % self.queues.len();
-        
+
         if idx != self.idx {
             let mut aborts = 0;
             loop {
@@ -76,7 +76,7 @@ impl Worker {
                 if aborts > ABORTS_BEFORE_BACKOFF {
                     return None;
                 }
-                
+
                 match self.queues[idx].steal() {
                     Stolen::Success(job) => return Some(job),
                     Stolen::Empty => return None,
@@ -98,7 +98,7 @@ impl Worker {
                     match queue.steal() {
                         Stolen::Success(job) => {
                             all_clear = false;
-                            unsafe { (*job).call(self) }   
+                            unsafe { (*job).call(self) }
                         }
                         Stolen::Empty => break,
                         Stolen::Abort => {
@@ -140,20 +140,20 @@ impl Worker {
     // construct a new spawning scope.
     // this waits for all jobs submitted internally to complete.
     fn scope<'pool, 'new, F, R>(&'pool self, f: F) -> R
-        where F: 'new + FnOnce(Spawner<'pool, 'new>) -> R,
+        where F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
               R: 'new,
-        
+
     {
         let counter = AtomicUsize::new(0);
         let s = make_spawner(self, &counter);
-        let res = f(s);
-        
+        let res = f(&s);
+
         loop {
             let status = counter.load(Ordering::Acquire);
             if status == 0 { break }
             unsafe { self.run_next() }
         }
-        
+
         res
     }
 }
@@ -184,21 +184,21 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     ///
     /// ```
     /// use jobsteal::make_pool;
-    /// 
+    ///
     /// let mut pool = make_pool(2).unwrap();
-    /// 
+    ///
     /// // get a handle to the pool's spawner.
     /// let spawner = pool.spawner();
-    /// 
+    ///
     /// // execute a job which can spawn other jobs.
     /// spawner.recurse(|inner| {
     ///     for i in 0..10 {
-    ///         inner.submit(move || println!("{}", i));    
+    ///         inner.submit(move || println!("{}", i));
     ///     }
     /// })
     /// ```
     pub fn recurse<F>(&self, f: F)
-        where F: 'scope + Send + FnOnce(Spawner<'pool, 'scope>)
+        where F: 'scope + Send + FnOnce(&Spawner<'pool, 'scope>)
     {
         use std::mem;
 
@@ -212,7 +212,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
             // and we wait for all jobs to complete.
             let counter: SendCounter = SendCounter(self.counter);
             if !self.counter.is_null() {
-                (*self.counter).fetch_add(1, Ordering::AcqRel);   
+                (*self.counter).fetch_add(1, Ordering::AcqRel);
             }
             self.worker.submit_internal(self.counter, move |worker| {
                 let SendCounter(count_ptr) = counter;
@@ -222,11 +222,11 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
                 // invariants by accessing other workers' queues/arenas
                 // in unexpected ways.
                 let spawner = make_spawner(worker, count_ptr);
-                f(mem::transmute(spawner))
+                f(mem::transmute(&spawner))
             });
         }
     }
-    
+
     /// Submit a job to be executed by the thread pool.
     ///
     /// The job's contents must outlive the spawner's scope. If they don't,
@@ -241,12 +241,12 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     ///
     /// ```
     /// use jobsteal::make_pool;
-    /// 
+    ///
     /// let mut pool = make_pool(2).unwrap();
-    /// 
+    ///
     /// // get a handle to the pool's spawner.
     /// let spawner = pool.spawner();
-    /// 
+    ///
     /// for i in 0..10 {
     ///     // this spawner can only be used to execute jobs which fully own their data.
     ///     spawner.submit(move || println!("Hello {}", i));
@@ -256,7 +256,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
         if !self.counter.is_null() {
             unsafe { (*self.counter).fetch_add(1, Ordering::AcqRel) };
         }
-        
+
         unsafe {
             self.worker.submit_internal(self.counter, move |_| {
                 f();
@@ -272,10 +272,10 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     ///
     /// ```
     /// use jobsteal::make_pool;
-    /// 
+    ///
     /// let mut pool = make_pool(2).unwrap();
     /// let spawner = pool.spawner();
-    /// 
+    ///
     /// let mut v = (0..1024).collect::<Vec<_>>();
     /// spawner.scope(|scope| {
     ///     // within this scope, we can spawn jobs that access data outside of it.
@@ -287,12 +287,12 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// ```
     pub fn scope<'new, F, R>(&'new self, f: F) -> R
         where 'scope: 'new,
-        F: 'new + FnOnce(Spawner<'pool, 'new>) -> R,
+        F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
         R: 'new
     {
         self.worker.scope(f)
     }
-    
+
     /// Execute two closures, possibly asynchronously, and return their results.
     /// This will block until they are both complete.
     ///
@@ -305,26 +305,26 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// use jobsteal::Spawner;
     /// fn main() {
     ///     // a simple quicksort
-    ///     fn quicksort<'a, 'b, T: Ord + Send>(data: &mut [T], spawner: Spawner<'a, 'b>) {
+    ///     fn quicksort<'a, 'b, T: Ord + Send>(data: &mut [T], spawner: &Spawner<'a, 'b>) {
     ///     	if data.len() <= 1 { return; }
-    ///     	
+    ///
     ///     	// partition the data.
     ///     	let pivot = partition(data);
     ///     	let (a, b) = data.split_at_mut(pivot);
-    ///     	
+    ///
     ///     	// recursively sort the two parts using the threadpool.
     ///     	spawner.join(
     ///     		|inner| quicksort(a, inner),
     ///     		|inner| quicksort(b, inner),
     ///     	);
     ///     }
-    ///     
+    ///
     ///     // partition the array such that all elements on the left of the partition
     ///     // are less than those to the right.
     ///     fn partition<T: Ord>(data: &mut [T]) -> usize {
     ///         let pivot = data.len() - 1;
     ///         let mut i = 0;
-    ///     	
+    ///
     ///     	for j in 0..pivot {
     ///     		if data[j] <= data[pivot] {
     ///     			data.swap(i, j);
@@ -334,14 +334,14 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     ///     	data.swap(i, pivot);
     ///     	i
     ///     }
-    /// 
-    /// 
+    ///
+    ///
     ///     let len = 1024;
     ///     let mut to_sort = (0..len).rev().collect::<Vec<_>>();
-    ///    
+    ///
     ///     let mut pool = jobsteal::make_pool(4).unwrap();
-    ///     quicksort(&mut to_sort, pool.spawner());
-    /// 
+    ///     quicksort(&mut to_sort, &pool.spawner());
+    ///
     ///     for pair in to_sort.windows(2) {
     /// 	    assert!(pair[1] >= pair[0]);
     ///     }
@@ -349,19 +349,19 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// ```
     #[allow(non_camel_case_types)]
     pub fn join<A, B, R_A, R_B>(&self, oper_a: A, oper_b: B) -> (R_A, R_B)
-    where A: Send + for<'new> FnOnce(Spawner<'pool, 'new>) -> R_A,
-          B: Send + for<'new> FnOnce(Spawner<'pool, 'new>) -> R_B,
+    where A: Send + for<'new> FnOnce(&Spawner<'pool, 'new>) -> R_A,
+          B: Send + for<'new> FnOnce(&Spawner<'pool, 'new>) -> R_B,
           R_A: Send,
           R_B: Send,
-    {   
+    {
         let mut a_dest = None;
         let mut b_dest = None;
-        
+
         self.scope(|scope| {
-            a_dest = Some(oper_a(scope.clone()));
-            b_dest = Some(oper_b(scope));
+            a_dest = Some(oper_a(&scope));
+            b_dest = Some(oper_b(&scope));
         });
-        
+
         (a_dest.unwrap(), b_dest.unwrap())
     }
 }
@@ -391,7 +391,7 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
     }
     // if the worker for this thread panics,
     let _guard = PanicGuard(tx.clone());
-    
+
     match rx.recv() {
         Ok(ToWorker::Start) => {},
         _ => unreachable!(),
@@ -440,7 +440,7 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
 /// The work pool manages worker threads in a work-stealing fork-join thread pool.
 ///
 /// You can submit jobs to the pool directly using `Pool::submit`. This has similar
-/// semantics to the standard library `thread::spawn`, in that the work provided must 
+/// semantics to the standard library `thread::spawn`, in that the work provided must
 /// fully own its data.
 ///
 /// `Pool` also provides a facility for spawning scoped jobs via the "scope" function.
@@ -452,7 +452,7 @@ pub struct Pool {
 
 impl Pool {
     /// Creates a pool with `n` worker threads.
-    /// 
+    ///
     /// You can create a pool with 0 worker threads,
     /// but jobs won't be run until the pool is given an opportunity to join them.
     /// This will occur at scope boundaries, the pool's destructor, or in calls to
@@ -495,14 +495,14 @@ impl Pool {
             },
             state: State::Paused,
         };
-        
+
         pool.spin_up();
-        
+
         Ok(pool)
     }
 
     /// Finish all current jobs which are queued, and synchronize the workers until
-    /// it's time to start again. 
+    /// it's time to start again.
     ///
     /// If any of the threads have panicked, that panic
     /// will be propagated to this thread. Until the next job is submitted,
@@ -518,11 +518,11 @@ impl Pool {
     /// Any jobs submitted in this scope will be completed by the end of this function call.
     /// See Spawner::scope for a more detailed description.
     pub fn scope<'pool, 'new, F, R>(&'pool mut self, f: F) -> R
-        where F: 'new + FnOnce(Spawner<'pool, 'new>) -> R,
+        where F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
               R: 'new,
     {
         self.spin_up();
-        
+
         self.local_worker.scope(f)
     }
 
@@ -539,11 +539,11 @@ impl Pool {
     /// However, there is always the chance that the pool could be leaked, violating the
     /// invariant that the job is completed while its data is still alive.
     pub fn recurse<'a, F>(&'a mut self, f: F)
-        where F: 'static + Send + FnOnce(Spawner<'a, 'static>)
+        where F: 'static + Send + FnOnce(&Spawner<'a, 'static>)
     {
         self.spawner().recurse(f);
     }
-    
+
     /// Execute a job which strictly owns its contents.
     ///
     /// The execution of this function may be deferred beyond this function call,
@@ -573,7 +573,7 @@ impl Pool {
             self.state = State::Running;
         }
     }
-    
+
     /// Get the pool's spawner.
     ///
     /// This will initally only accept jobs which outive 'static,
@@ -581,7 +581,7 @@ impl Pool {
     /// See the `Spawner` documentation for more information.
     pub fn spawner<'a>(&'a mut self) -> Spawner<'a, 'static> {
         use std::ptr;
-        
+
         self.spin_up();
         make_spawner(&self.local_worker, ptr::null_mut())
     }
@@ -620,7 +620,7 @@ impl Pool {
         for arena in self.local_worker.arenas.iter() {
             unsafe { arena.cull_memory(); }
         }
-        
+
         for queue in self.local_worker.queues.iter() {
             unsafe { queue.cull_memory(); }
         }
@@ -665,7 +665,7 @@ pub fn make_pool(n: usize) -> Result<Pool, Error> {
 #[cfg(test)]
 mod tests {
     use super::Pool;
-    
+
     fn pool_harness<F>(f: F) where F: Fn(&mut Pool) {
         for i in 0..32 {
             let mut pool = Pool::new(i).unwrap();
@@ -689,7 +689,7 @@ mod tests {
                     });
                 }
             });
-        
+
             assert_eq!(v, (0..1024).collect::<Vec<_>>());
         });
     }
@@ -705,7 +705,7 @@ mod tests {
                     }
                 });
                 // job is forcibly joined here.
-    
+
                 assert_eq!(v, vec![1; 256]);
             }); // any other jobs would be forcibly joined here.
         });
@@ -719,7 +719,7 @@ mod tests {
             }
         });
     }
-    
+
     #[test]
     fn join() {
         pool_harness(|pool| {
@@ -729,19 +729,19 @@ mod tests {
             assert_eq!(b, r_b);
         });
     }
-    
+
     #[test]
     fn join_scoping() {
         pool_harness(|pool| {
             let mut v = vec![0; 256];
-            {           
+            {
                 let (a, b) = v.split_at_mut(128);
                 pool.spawner().join(
                     |_| for i in a { *i += 1},
                     |_| for i in b { *i += 1},
                 );
             }
-            
+
             assert_eq!(v, vec![1; 256])
         });
     }
@@ -761,12 +761,12 @@ mod tests {
             });
         });
     }
-    
+
     #[test]
     fn scope_return() {
         pool_harness(|pool| {
             let x = pool.scope(|_| 0);
-            assert_eq!(x, 0); 
+            assert_eq!(x, 0);
         });
     }
 
