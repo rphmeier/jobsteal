@@ -362,8 +362,11 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
         let mut b_dest = None;
 
         self.scope(|scope| {
-            a_dest = Some(oper_a(&scope));
+            // run oper_a potentially asynchronously.
+            scope.recurse(|scope| a_dest = Some(oper_a(&scope)));
+            // run oper_b synchronously.
             b_dest = Some(oper_b(&scope));
+            // wait for oper_a to finish, running it locally if possible.
         });
 
         (a_dest.unwrap(), b_dest.unwrap())
