@@ -68,9 +68,6 @@ impl Worker {
             return Some(job);
         }
 
-        // since pop failed, that means that the queue is guaranteed to be empty --
-        // does this mean we can cull the cached arrays from the queue?
-
         let idx = (*self.rng.get()).gen::<usize>() % self.queues.len();
 
         if idx != self.idx {
