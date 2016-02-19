@@ -48,7 +48,11 @@ enum State {
     Paused, // paused, waiting for start or shutdown message.
 }
 
-struct Worker {
+// FIXME: This really shouldn't need to be public, but the compiler complains about it being used
+// in a "public" function signature within the `job` module. I don't agree, but I don't have any other
+// recourse than to complain about it in this comment :)
+#[doc(hidden)]
+pub struct Worker {
     queues: Arc<Vec<Queue>>,
     arenas: Arc<Vec<Arena>>,
     idx: usize, // the index of this worker's queue and pool in the Vec.
