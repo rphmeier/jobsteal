@@ -795,4 +795,24 @@ mod tests {
            let _ = pool.spawner().clone();
         });
     }
+
+    #[test]
+    fn submit_large_jobs() {
+        pool_harness(|pool| {
+           let mut v = vec![0; 1024];
+           pool.scope(|scope| {
+               let v = &mut v;
+               let a = [0; 4096];
+
+               scope.submit(move || {
+                   // move the array in to artificially increase the environment size.
+                   let _ = a;
+                   for i in v.iter_mut() { *i += 1 }
+               });
+           });
+
+           // check that the job is actually being executed.
+           assert_eq!(v, vec![1; 1024]);
+        });
+    }
 }
