@@ -2,7 +2,7 @@ use std::mem;
 use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::Worker;
+use super::worker::Worker;
 
 const JOB_SIZE: usize = 256;
 
@@ -21,12 +21,12 @@ const ARR_SIZE: usize = ((JOB_SIZE - VTABLE_WIDTH) / 8) - 1;
 
 // virtual wrapper for arbitrary function.
 // the virtualization here is an acceptable overhead.
-trait Thunk {
+pub trait Thunk {
     unsafe fn call(&mut self, args: &Worker);
 }
 
 // a closure and child jobs counter.
-struct ThunkImpl<F> {
+pub struct ThunkImpl<F> {
     func: Option<F>,
     counter: *const AtomicUsize,
 }
@@ -63,7 +63,7 @@ pub enum Job {
     Heap(Box<Thunk>),
 }
 
-struct InlineJob {
+pub struct InlineJob {
     raw_data: [u64; ARR_SIZE],
     vtable: *mut (),
     _padding: [u8; PADDING_WIDTH],

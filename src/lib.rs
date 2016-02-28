@@ -6,14 +6,14 @@ extern crate rand;
 mod arena;
 mod job;
 mod queue;
+mod worker;
 
 use rand::{Rng, SeedableRng, thread_rng, XorShiftRng};
 
-use self::job::Job;
 use self::arena::Arena;
-use self::queue::{Queue, Stolen};
+use self::queue::Queue;
+use self::worker::Worker;
 
-use std::cell::UnsafeCell;
 use std::io::Error;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -46,117 +46,6 @@ struct WorkerHandle {
 enum State {
     Running, // running jobs normally. waiting for state change.
     Paused, // paused, waiting for start or shutdown message.
-}
-
-// FIXME: This really shouldn't need to be public, but the compiler complains about it being used
-// in a "public" function signature within the `job` module. I don't agree, but I don't have any other
-// recourse than to complain about it in this comment :)
-#[doc(hidden)]
-pub struct Worker {
-    queues: Arc<Vec<Queue>>,
-    arenas: Arc<Vec<Arena>>,
-    idx: usize, // the index of this worker's queue and pool in the Vec.
-    rng: UnsafeCell<XorShiftRng>,
-}
-
-impl Worker {
-    // pop a job from the worker's queue, or steal one from the queue with the most work.
-    unsafe fn pop_or_steal(&self) -> Option<*mut Job> {
-        const ABORTS_BEFORE_BACKOFF: usize = 64;
-
-        if let Some(job) = self.queues[self.idx].pop() {
-            return Some(job);
-        }
-
-        let idx = (*self.rng.get()).gen::<usize>() % self.queues.len();
-
-        if idx != self.idx {
-            let mut aborts = 0;
-            loop {
-                aborts += 1;
-                if aborts > ABORTS_BEFORE_BACKOFF {
-                    return None;
-                }
-
-                match self.queues[idx].steal() {
-                    Stolen::Success(job) => return Some(job),
-                    Stolen::Empty => return None,
-                    _ => {}
-                }
-            }
-        } else {
-            None
-        }
-    }
-
-    // do a sweep through all the queues, saying whether all
-    // were observed to be empty initially.
-    fn clear_pass(&self) -> bool {
-        let mut all_clear = true;
-        for (idx, queue) in self.queues.iter().enumerate() {
-            if idx != self.idx {
-                loop {
-                    match queue.steal() {
-                        Stolen::Success(job) => {
-                            all_clear = false;
-                            unsafe { (*job).call(self) }
-                        }
-                        Stolen::Empty => break,
-                        Stolen::Abort => {
-                            all_clear = false;
-                        }
-                    }
-                }
-            } else {
-                while let Some(job) = unsafe { queue.pop() } {
-                    all_clear = false;
-                    unsafe { (*job).call(self) }
-                }
-            }
-        }
-
-        all_clear
-    }
-
-    fn clear(&self) {
-        while !self.clear_pass() {}
-    }
-
-    // run the next job.
-    unsafe fn run_next(&self) {
-        if let Some(job) = self.pop_or_steal() {
-            (*job).call(self)
-        }
-    }
-
-    // This must be called on the thread the worker is assigned to.
-    unsafe fn submit_internal<F>(&self, counter: *const AtomicUsize, f: F)
-        where F: Send + FnOnce(&Worker)
-    {
-        let job = Job::new(counter, f);
-        let job_ptr = self.arenas[self.idx].alloc(job);
-        self.queues[self.idx].push(job_ptr);
-    }
-
-    // construct a new spawning scope.
-    // this waits for all jobs submitted internally to complete.
-    fn scope<'pool, 'new, F, R>(&'pool self, f: F) -> R
-        where F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
-              R: 'new,
-
-    {
-        let counter = AtomicUsize::new(0);
-        let s = make_spawner(self, &counter);
-        let res = f(&s);
-
-        loop {
-            let status = counter.load(Ordering::Acquire);
-            if status == 0 { break }
-            unsafe { self.run_next() }
-        }
-
-        res
-    }
 }
 
 /// A job spawner associated with a specific scope.
@@ -480,12 +369,12 @@ impl Pool {
             let (work_send, work_recv) = channel();
             let (lead_send, lead_recv) = channel();
 
-            let worker = Worker {
-                queues: queues.clone(),
-                arenas: arenas.clone(),
-                idx: i + 1,
-                rng: UnsafeCell::new(XorShiftRng::from_seed(rng.gen::<[u32; 4]>())),
-            };
+            let worker = Worker::new(
+                queues.clone(),
+                arenas.clone(),
+                i + 1,
+                XorShiftRng::from_seed(rng.gen::<[u32; 4]>())
+            );
 
             let builder = thread::Builder::new().name(format!("worker_{}", i));
             let handle = try!(builder.spawn(move || worker_main(lead_send, work_recv, worker)));
@@ -499,12 +388,12 @@ impl Pool {
 
         let mut pool = Pool {
             workers: workers,
-            local_worker: Worker {
-                queues: queues,
-                arenas: arenas,
-                idx: 0,
-                rng: UnsafeCell::new(XorShiftRng::from_seed(rng.gen::<[u32; 4]>())),
-            },
+            local_worker: Worker::new(
+                queues,
+                arenas,
+                0,
+                XorShiftRng::from_seed(rng.gen::<[u32; 4]>())
+            ),
             state: State::Paused,
         };
 
@@ -629,11 +518,11 @@ impl Pool {
         // at this point, we have received notice from all workers
         // that they have stopped (either willingly or by panic),
         // and that all jobs have been run.
-        for arena in self.local_worker.arenas.iter() {
+        for arena in self.local_worker.arenas().iter() {
             unsafe { arena.cull_memory(); }
         }
 
-        for queue in self.local_worker.queues.iter() {
+        for queue in self.local_worker.queues().iter() {
             unsafe { queue.cull_memory(); }
         }
 
