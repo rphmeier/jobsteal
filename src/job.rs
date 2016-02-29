@@ -92,7 +92,7 @@ impl Job {
         let mut raw_data = [0u64; ARR_SIZE];
         unsafe {
             // write the closure's environment to the array.
-            let code_ptr: *mut ThunkImpl<F> = &mut raw_data[0] as *mut _ as *mut _;
+            let code_ptr: *mut ThunkImpl<F> = raw_data.as_mut_ptr() as *mut _;
             ptr::write(code_ptr, code);
 
             // create a custom trait object which stores a relative offset,
