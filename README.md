@@ -58,4 +58,4 @@ Recursive work-splitting typically leads to much better work distribution betwee
 
 ## Recover Safety
 A panic in one worker is intended to propagate to the main thread eventually. However, the code hasn't been vetted for safety, so please try to avoid panicking in your jobs.
-There should probably be a RecoverSafe bound on job functions. This would require nightly, and RecoverSafe is also really cumbersome.
+There should probably be a PanicSafe bound on job functions. This would require nightly, and PanicSafe is also really cumbersome.
