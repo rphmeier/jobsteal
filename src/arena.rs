@@ -17,7 +17,7 @@ impl BufChain {
             prev: None,
         }
     }
-    
+
     // try to allocate this job on the top-level vector.
     // returns an error if out of space.
     fn alloc(&mut self, job: Job) -> Result<*mut Job, Job> {
@@ -29,19 +29,20 @@ impl BufChain {
             unsafe { Ok(self.buf.get_unchecked_mut(len) as *mut Job) }
         }
     }
-    
+
     // create a new buffer with double the size of this one, while preserving
     // this one in the linked list.
     fn grow(self) -> Self {
         use std::cmp::max;
-        
-        let new_size = max(self.buf.len(), 4);
+
+        let new_size = max(self.buf.len() * 2, 4);
+
         BufChain {
             buf: Vec::with_capacity(new_size),
             prev: Some(Box::new(self)),
         }
     }
-    
+
     // "shrink" the chain by dropping all old vectors,
     // and setting the length of the top-level vector to
     // zero.
@@ -75,11 +76,21 @@ impl Arena {
                 // grow the buffer, replacing it with a temporary while we grow it.
                 let new_link = mem::replace(&mut *buf, BufChain::new(0)).grow();
                 *buf = new_link;
-                
+
                 // we just grew the buffer, so we are guaranteed to have capacity.
                 buf.alloc(job).ok().unwrap()
             }
         }
+    }
+
+    // gets the current top of the buffer.
+    pub fn top(&self) -> usize {
+        self.buf.borrow().buf.len()
+    }
+
+    // sets the top of the buffer.
+    pub unsafe fn set_top(&self, top: usize) {
+        self.buf.borrow_mut().buf.set_len(top);
     }
 
     // cull any cached memory on the assumption that there are no existing

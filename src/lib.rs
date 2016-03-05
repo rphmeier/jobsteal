@@ -259,20 +259,6 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     }
 }
 
-/// It is only safe to clone spawners with a 'static scope.
-/// Otherwise, we could write something like this:
-///
-/// ```ignore
-/// let mut pool = make_pool(4).unwrap();
-/// let leaked = pool.scope(|scope| scope.clone());
-/// // oops, we just leaked a scoped spawner!
-/// ```
-impl<'a> Clone for Spawner<'a, 'static> {
-    fn clone(&self) -> Self {
-        make_spawner(self.worker, self.counter)
-    }
-}
-
 fn make_spawner<'a, 'b>(worker: &'a Worker, counter: *const AtomicUsize) -> Spawner<'a, 'b> {
     Spawner {
         worker: worker,
@@ -676,13 +662,6 @@ mod tests {
     fn job_panic() {
         let mut pool = Pool::new(1).unwrap();
         pool.submit(|| panic!("Eep!"));
-    }
-
-    #[test]
-    fn clone_static_spawner() {
-        pool_harness(|pool| {
-           let _ = pool.spawner().clone();
-        });
     }
 
     #[test]

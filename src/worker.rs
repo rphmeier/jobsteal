@@ -115,6 +115,10 @@ impl Worker {
     {
         let counter = AtomicUsize::new(0);
         let s = make_spawner(self, &counter);
+
+        // store the top of the job arena before the scope is run.
+        let top = self.arenas[self.idx].top();
+
         let res = f(&s);
 
         loop {
@@ -122,6 +126,13 @@ impl Worker {
             if status == 0 { break }
             unsafe { self.run_next() }
         }
+
+        // once all jobs have completed from the scope, we can reset the arena
+        // to its previous state. This only holds true if:
+        //   - the arena is only used from this thread. this is already supposed to be true.
+        //   - spawners cannot be cloned. If we could clone spawners, using one within another's
+        //     scope could lead to jobs being overwritten.
+        unsafe { self.arenas[self.idx].set_top(top); }
 
         res
     }
