@@ -1,6 +1,7 @@
-//! A work-stealing fork-join queue used to perform processors' work asynchronously.
+//! A work-stealing fork-join thread pool used to perform work asynchronously.
 //! This is intended to be short-lived. Long running asynchronous tasks should use another method.
-//! For infinite loops, the longest-running of tasks, behavior will be as expected.
+//! This crate is fairly experimental and should be used with caution.
+
 extern crate rand;
 
 mod arena;
@@ -277,6 +278,7 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
         }
     }
     // if the worker for this thread panics,
+    // we should let the main thread know.
     let _guard = PanicGuard(tx.clone());
 
     match rx.recv() {

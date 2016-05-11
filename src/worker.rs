@@ -28,7 +28,7 @@ impl Worker {
             rng: UnsafeCell::new(rng),
         }
     }
-    // pop a job from the worker's queue, or steal one from the queue with the most work.
+    // pop a job from the worker's queue, or steal one from another queue.
     unsafe fn pop_or_steal(&self) -> Option<*mut Job> {
         const ABORTS_BEFORE_BACKOFF: usize = 64;
 
@@ -121,11 +121,29 @@ impl Worker {
 
         let res = f(&s);
 
+        struct PanicGuard<'a>(&'a AtomicUsize);
+        impl<'a> Drop for PanicGuard<'a> {
+            fn drop(&mut self) {
+                while self.0.load(Ordering::Acquire) > 0 {
+                    ::std::thread::yield_now()
+                }
+            }
+        }
+
+        // if this thread panics while running a job, we need
+        // to wait for other threads to finish the scoped jobs
+        // before unwinding. this could result in a deadlock in cases
+        // where many functions are panicking and no other threads exist
+        // to finish jobs.
+        let guard = PanicGuard(&counter);
+
         loop {
             let status = counter.load(Ordering::Acquire);
             if status == 0 { break }
             unsafe { self.run_next() }
         }
+
+        ::std::mem::forget(guard);
 
         // once all jobs have completed from the scope, we can reset the arena
         // to its previous state. This only holds true if:
