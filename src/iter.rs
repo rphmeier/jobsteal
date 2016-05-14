@@ -47,6 +47,62 @@ pub trait Split: Send + IntoIterator {
     fn split(self, usize) -> (Self, Self);
 }
 
+/// Things that can be turned into a `SplitIterator`.
+pub trait IntoSplitIterator {
+    /// The item the split iterator will produce.
+    type Item;
+
+    /// The iterator this will turn into.
+    type SplitIter: SplitIterator<Item=Self::Item>;
+
+    fn into_split_iter(self) -> Self::SplitIter;
+}
+
+impl<T: SplitIterator> IntoSplitIterator for T {
+    type Item = <Self as SplitIterator>::Item;
+    type SplitIter = Self;
+
+    fn into_split_iter(self) -> Self::SplitIter {
+        self
+    }
+}
+
+impl<'a, T: 'a + Sync> IntoSplitIterator for &'a [T] {
+    type Item = &'a T;
+    type SplitIter = SliceSplit<'a, T>;
+
+    fn into_split_iter(self) -> Self::SplitIter {
+        SliceSplit(self)
+    }
+}
+
+impl<'a, T: 'a + Sync + Send> IntoSplitIterator for &'a mut [T] {
+    type Item = &'a mut T;
+    type SplitIter = SliceSplitMut<'a, T>;
+
+    fn into_split_iter(self) -> Self::SplitIter {
+        SliceSplitMut(self)
+    }
+}
+
+impl<'a, T: 'a + Sync> IntoSplitIterator for &'a Vec<T> {
+    type Item = &'a T;
+    type SplitIter = SliceSplit<'a, T>;
+
+    fn into_split_iter(self) -> Self::SplitIter {
+        SliceSplit(&self)
+    }
+}
+
+impl<'a, T: 'a + Sync + Send> IntoSplitIterator for &'a mut Vec<T> {
+    type Item = &'a mut T;
+    type SplitIter = SliceSplitMut<'a, T>;
+
+    fn into_split_iter(self) -> Self::SplitIter {
+        SliceSplitMut(self)
+    }
+}
+
 /// Used to mask data so that implementations don't conflict.
 ///
 /// Specifically, this is used in the implementation of `SplitIterator`

@@ -11,6 +11,8 @@ mod worker;
 
 pub mod iter;
 
+pub use iter::{IntoSplitIterator, Split, SplitIterator};
+
 use rand::{Rng, SeedableRng, thread_rng, XorShiftRng};
 
 use self::arena::Arena;
