@@ -9,6 +9,8 @@ mod job;
 mod queue;
 mod worker;
 
+pub mod iter;
+
 use rand::{Rng, SeedableRng, thread_rng, XorShiftRng};
 
 use self::arena::Arena;
