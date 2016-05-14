@@ -2,6 +2,9 @@ use super::Spawner;
 
 /// A parallel iterator which works by splitting the underlying data
 /// and sharing it between threads.
+///
+/// Functions which consume the iterator will take a `&Spawner` as an argument,
+/// so that they can distribute their work in parallel.
 pub trait SplitIterator: Sized {
     /// The item this iterator produces.
     type Item;
@@ -32,6 +35,30 @@ pub trait SplitIterator: Sized {
             parent: self,
             map: map,
         }
+    }
+
+    /// Consume this iterator, performing an action for each item.
+    fn for_each<F: Sync>(self, spawner: &Spawner, f: F) where F: Fn(Self::Item) {
+        let (base, consumer) = self.destructure();
+
+        let f = &f;
+        consume_helper::<Self, _>((base, &consumer), spawner, &(|base, cons| {
+            cons.consume(base, f);
+        }))
+    }
+}
+
+fn consume_helper<T: SplitIterator, F: Sync>(iter: (T::Base, &T::Consumer), spawner: &Spawner, f: &F)
+where F: Fn(T::Base, &T::Consumer) {
+    let (base, consumer) = iter;
+    if let Some(idx) = base.should_split() {
+        let (b1, b2) = base.split(idx);
+        spawner.join(
+            |inner| consume_helper::<T, F>((b1, consumer), inner, f),
+            |inner| consume_helper::<T, F>((b2, consumer), inner, f),
+        );
+    } else {
+        f(base, consumer);
     }
 }
 
@@ -384,20 +411,24 @@ impl<A: Split, B: Split> Split for Hide<Zip<A, B>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use ::{make_pool, Pool, IntoSplitIterator, SplitIterator};
+
+    fn pool_harness<F: FnMut(&mut Pool)>(mut f: F) {
+        for i in 0..32 {
+            let mut pool = make_pool(i).unwrap();
+            f(&mut pool);
+        }
+    }
 
     #[test]
-    fn test1() {
-        let v1 = vec![1, 2, 3];
-        let v2 = vec![4, 5, 6];
+    fn doubling() {
+        let v: Vec<_> = (0..5000).collect();
 
-        let s1 = SliceSplit(&v1);
-        let s2 = SliceSplit(&v2);
+        pool_harness(|pool| {
+            let mut v1 = v.clone();
+            (&mut v1).into_split_iter().for_each(&pool.spawner(), |x| *x *= 2);
 
-        let diff = 1;
-        let i = s1.map(|x| x + diff).zip(s2).map(|(a, b)| a + b);
-
-        let (base, consumer) = i.destructure();
-        consumer.consume(base, |x| println!("{:?}", x));
+            assert_eq!(v1, (0..5000).map(|x| x * 2).collect::<Vec<_>>());
+        });
     }
 }
