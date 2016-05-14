@@ -556,15 +556,16 @@ pub fn make_pool(n: usize) -> Result<Pool, Error> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::Pool;
-
-    fn pool_harness<F>(f: F) where F: Fn(&mut Pool) {
-        for i in 0..32 {
-            let mut pool = Pool::new(i).unwrap();
-            f(&mut pool);
-        }
+fn pool_harness<F>(f: F) where F: Fn(&mut Pool) {
+    for i in 0..32 {
+        let mut pool = Pool::new(i).unwrap();
+        f(&mut pool);
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pool_harness, Pool};
 
     #[test]
     fn creation_destruction() {
