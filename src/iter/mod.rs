@@ -5,6 +5,7 @@ use std::iter::FromIterator;
 use super::Spawner;
 
 mod collect;
+mod cost_mul;
 mod enumerate;
 mod filter;
 mod map;
@@ -86,6 +87,29 @@ pub trait SplitIterator: Sized {
     fn size_hint(&self) -> (usize, Option<usize>) {
         (0, None)
     }
+
+    /// Uses a cost multiplier for this iterator.
+    ///
+    /// This takes the absolute value of the multiplier supplied.
+    ///
+    /// This will affect how often the data backing this iterator is split
+    /// in two.
+    ///
+    /// `with_cost_mul(1.0)` will have no effect.
+    ///
+    /// `with_cost_mul(2.0)` will cause twice as much splitting, while
+    /// `with_cost_mul(0.5)` will cause half as much splitting.
+    ///
+    /// `with_cost_mul(0.0)` will cause the data to never split, and
+    /// `with_cost_mul(f32::INFINITY)` will cause the data to split whenever
+    /// possible.
+    fn with_cost_mul(self, mul: f32) -> CostMul<Self> {
+        let mul = if mul < 0.0 { -mul } else { mul };
+        CostMul {
+            parent: self,
+            mul: mul,
+        }
+    }
 }
 
 fn for_each_helper<T, F>(base: T::Base, consumer: &T::Consumer, spawner: &Spawner, f: &F)
@@ -138,6 +162,13 @@ pub struct Map<T, F> {
 pub struct Zip<A, B> {
     a: A,
     b: B,
+}
+
+/// A cost multiplier.
+/// See the docs of `Split::with_cost_mul` for more.
+pub struct CostMul<T> {
+    parent: T,
+    mul: f32,
 }
 
 /// Data which can be split in two at an index.
@@ -272,7 +303,7 @@ impl<'a, T: 'a> IntoIterator for SliceSplitMut<'a, T> {
 impl<'a, T: 'a + Sync> Split for SliceSplit<'a, T> {
     fn should_split(&self, mul: f32) -> Option<usize> {
         let len = self.0.len();
-        if (len as f32 *mul) > 4096.0 { Some(len / 2) }
+        if len > 1 && (len as f32 *mul) > 4096.0 { Some(len / 2) }
         else { None }
     }
 
@@ -294,7 +325,7 @@ impl<'a, T: 'a + Sync> Split for SliceSplit<'a, T> {
 impl<'a, T: 'a + Sync + Send> Split for SliceSplitMut<'a, T> {
     fn should_split(&self, mul: f32) -> Option<usize> {
         let len = self.0.len();
-        if (len as f32 * mul) > 4096.0 { Some(len / 2) }
+        if len > 1 && (len as f32 * mul) > 4096.0 { Some(len / 2) }
         else { None }
     }
 
