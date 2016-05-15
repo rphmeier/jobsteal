@@ -149,6 +149,7 @@ pub trait ExactSizeSplitIterator: SplitIterator {
 }
 
 /// Enumerate iterator adapter
+#[derive(Clone)]
 pub struct Enumerate<T> {
     parent: T,
     off: usize,
@@ -157,6 +158,7 @@ pub struct Enumerate<T> {
 /// Filter ilterator adapter.
 ///
 /// This filters each element by a given predicate.
+#[derive(Clone)]
 pub struct Filter<T, F> {
     parent: T,
     pred: F,
@@ -166,6 +168,7 @@ pub struct Filter<T, F> {
 ///
 /// This produces an iterator for each item, and then yields the items of
 /// those iterators.
+#[derive(Clone)]
 pub struct FlatMap<T, F> {
     parent: T,
     flat_map: F,
@@ -174,6 +177,7 @@ pub struct FlatMap<T, F> {
 /// Map iterator adapter.
 ///
 /// This transforms each element into a new object.
+#[derive(Clone)]
 pub struct Map<T, F> {
     parent: T,
     map: F,
@@ -182,6 +186,7 @@ pub struct Map<T, F> {
 /// Zip iterator adapter.
 ///
 /// This combines two other iterators into one.
+#[derive(Clone)]
 pub struct Zip<A, B> {
     a: A,
     b: B,
@@ -189,6 +194,7 @@ pub struct Zip<A, B> {
 
 /// A cost multiplier.
 /// See the docs of `Split::with_cost_mul` for more.
+#[derive(Clone)]
 pub struct CostMul<T> {
     parent: T,
     mul: f32,
@@ -311,6 +317,12 @@ pub struct SliceSplit<'a, T: 'a>(&'a [T]);
 
 /// A split iterator over a mutable slice.
 pub struct SliceSplitMut<'a, T: 'a>(&'a mut [T]);
+
+impl<'a, T: 'a> Clone for SliceSplit<'a, T> {
+    fn clone(&self) -> Self {
+        SliceSplit(self.0)
+    }
+}
 
 impl<'a, T: 'a> IntoIterator for SliceSplit<'a, T> {
     type Item = <&'a [T] as IntoIterator>::Item;
