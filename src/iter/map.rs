@@ -1,4 +1,4 @@
-use super::{Callback, Consumer, Map, Split, SplitIterator, ExactSizeSplitIterator};
+use super::{Callback, Cloned, Consumer, Map, Split, SplitIterator, ExactSizeSplitIterator};
 
 const MAP_COST: f32 = 0.05;
 
@@ -73,5 +73,42 @@ impl<T: ExactSizeSplitIterator, F: Sync> ExactSizeSplitIterator for Map<T, F>
 where Map<T, F>: SplitIterator {
     fn size(&self) -> usize {
         self.parent.size()
+    }
+}
+
+pub struct ClonedConsumer<T>(T);
+
+struct ClonedCallback<C>(C);
+
+impl<'a, U: 'a + Clone, C: Callback<U>> Callback<&'a U> for ClonedCallback<C> {
+    type Out = C::Out;
+
+    fn call<I: Iterator<Item=(&'a U)>>(self, iter: I) -> Self::Out {
+        self.0.call(iter.cloned())
+    }
+}
+
+impl<'a, In: IntoIterator, T, U: 'a + Clone> Consumer<MapBase<In>> for ClonedConsumer<T>
+where T: Consumer<In, Item=(&'a U)> {
+    type Item = U;
+
+    fn consume<C: Callback<U>>(&self, i: MapBase<In>, cb: C) -> C::Out {
+        self.0.consume(i.0, ClonedCallback(cb))
+    }
+}
+
+impl<'a, T, U: Clone + 'a> SplitIterator for Cloned<T> where T: SplitIterator<Item=(&'a U)> {
+    type Item = U;
+    type Base = MapBase<T::Base>;
+    type Consumer = ClonedConsumer<T::Consumer>;
+
+    fn destructure(self) -> (Self::Base, Self::Consumer) {
+        let (b, c) = self.parent.destructure();
+
+        (MapBase(b), ClonedConsumer(c))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.parent.size_hint()
     }
 }

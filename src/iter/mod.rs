@@ -38,6 +38,13 @@ pub trait SplitIterator: Sized {
     /// a shareable consumer of that base.
     fn destructure(self) -> (Self::Base, Self::Consumer);
 
+    /// Clone the items of this iterator to get owned copies.
+    fn cloned<'a, T: 'a + Clone>(self) -> Cloned<Self> where Self: SplitIterator<Item=&'a T> {
+        Cloned {
+            parent: self,
+        }
+    }
+
     /// Enumerate items by their index.
     fn enumerate(self) -> Enumerate<Self> {
         Enumerate {
@@ -146,6 +153,11 @@ where T: SplitIterator, F: Sync + Fn(T::Item) {
 pub trait ExactSizeSplitIterator: SplitIterator {
     /// Get the number of elements in this iterator.
     fn size(&self) -> usize;
+}
+
+#[derive(Clone)]
+pub struct Cloned<T> {
+    parent: T,
 }
 
 /// Enumerate iterator adapter
