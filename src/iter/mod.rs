@@ -1,3 +1,5 @@
+//! Parallel iterators.
+
 use std::iter::FromIterator;
 
 use super::Spawner;
@@ -64,13 +66,9 @@ pub trait SplitIterator: Sized {
     }
 
     /// Consume this iterator, performing an action for each item.
-    fn for_each<F: Sync>(self, spawner: &Spawner, f: F) where F: Fn(Self::Item) {
+    fn for_each<F>(self, spawner: &Spawner, f: F) where F: Sync + Fn(Self::Item) {
         let (base, consumer) = self.destructure();
-
-        let f = &f;
-        consume_helper::<Self, _>((base, &consumer), spawner, &(|base, cons| {
-            cons.consume(base, f);
-        }))
+        for_each_helper::<Self, F>(base, &consumer, spawner, &f);
     }
 
     /// Collect the items of this iterator into a combinable collection.
@@ -90,17 +88,16 @@ pub trait SplitIterator: Sized {
     }
 }
 
-fn consume_helper<T: SplitIterator, F: Sync>(iter: (T::Base, &T::Consumer), spawner: &Spawner, f: &F)
-where F: Fn(T::Base, &T::Consumer) {
-    let (base, consumer) = iter;
+fn for_each_helper<T, F>(base: T::Base, consumer: &T::Consumer, spawner: &Spawner, f: &F)
+where T: SplitIterator, F: Sync + Fn(T::Item) {
     if let Some(idx) = base.should_split(1.0) {
         let (b1, b2) = base.split(idx);
         spawner.join(
-            |inner| consume_helper::<T, F>((b1, consumer), inner, f),
-            |inner| consume_helper::<T, F>((b2, consumer), inner, f),
+            move |inner| for_each_helper::<T, F>(b1, consumer, inner, f),
+            move |inner| for_each_helper::<T, F>(b2, consumer, inner, f),
         );
     } else {
-        f(base, consumer);
+        consumer.consume(base, f);
     }
 }
 
