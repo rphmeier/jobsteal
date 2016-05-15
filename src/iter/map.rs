@@ -1,4 +1,4 @@
-use super::{Callback, Consumer, Map, SplitIterator};
+use super::{Callback, Consumer, Map, SplitIterator, ExactSizeSplitIterator};
 
 struct MapCallback<C, F> {
     cb: C,
@@ -36,5 +36,12 @@ where F: Fn(T::Item) -> U {
         let (b, c) = self.parent.destructure();
 
         (b, Map { parent: c, map: self.map })
+    }
+}
+
+impl<T: ExactSizeSplitIterator, F: Sync> ExactSizeSplitIterator for Map<T, F>
+where Map<T, F>: SplitIterator {
+    fn size(&self) -> usize {
+        self.parent.size()
     }
 }

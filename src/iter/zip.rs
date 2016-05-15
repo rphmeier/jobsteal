@@ -1,4 +1,4 @@
-use super::{Callback, Consumer, Hide, Split, SplitIterator, Zip};
+use super::{Callback, Consumer, Hide, Split, SplitIterator, ExactSizeSplitIterator, Zip};
 
 // Okay, the callback situation gets a little hairy with Zip...
 //
@@ -87,6 +87,18 @@ impl<A: SplitIterator, B: SplitIterator> SplitIterator for Zip<A, B> {
             Hide(Zip { a: a_b, b: b_b }),
             Zip { a: a_c, b: b_c },
         )
+    }
+}
+
+impl<A: ExactSizeSplitIterator, B: ExactSizeSplitIterator> ExactSizeSplitIterator for Zip<A, B> {
+    fn size(&self) -> usize {
+        // take the smaller of the two sizes.
+        let (a, b) = (self.a.size(), self.b.size());
+        if a < b {
+            a
+        } else {
+            b
+        }
     }
 }
 

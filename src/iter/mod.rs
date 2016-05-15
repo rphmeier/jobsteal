@@ -1,7 +1,8 @@
 use super::Spawner;
 
-mod map;
+mod enumerate;
 mod filter;
+mod map;
 mod zip;
 
 /// A parallel iterator which works by splitting the underlying data
@@ -24,11 +25,11 @@ pub trait SplitIterator: Sized {
     /// a shareable consumer of that base.
     fn destructure(self) -> (Self::Base, Self::Consumer);
 
-    /// Map the items of this iterator to another type using the supplied function.
-    fn map<F: Sync, U>(self, map: F) -> Map<Self, F> where F: Fn(Self::Item) -> U {
-        Map {
+    /// Enumerate items by their index.
+    fn enumerate(self) -> Enumerate<Self> {
+        Enumerate {
             parent: self,
-            map: map,
+            off: 0,
         }
     }
 
@@ -37,6 +38,14 @@ pub trait SplitIterator: Sized {
         Filter {
             parent: self,
             pred: pred,
+        }
+    }
+
+    /// Map the items of this iterator to another type using the supplied function.
+    fn map<F: Sync, U>(self, map: F) -> Map<Self, F> where F: Fn(Self::Item) -> U {
+        Map {
+            parent: self,
+            map: map,
         }
     }
 
@@ -74,12 +83,17 @@ where F: Fn(T::Base, &T::Consumer) {
     }
 }
 
-/// Map iterator adapter.
-///
-/// This transforms each element into a new object.
-pub struct Map<T, F> {
+/// An iterator for which the exact number of elements is known.
+pub trait ExactSizeSplitIterator: SplitIterator {
+    /// Get the number of elements in this iterator.
+    fn size(&self) -> usize;
+}
+
+
+/// Enumerate iterator adapter
+pub struct Enumerate<T> {
     parent: T,
-    map: F,
+    off: usize,
 }
 
 /// Filter ilterator adapter.
@@ -88,6 +102,14 @@ pub struct Map<T, F> {
 pub struct Filter<T, F> {
     parent: T,
     pred: F,
+}
+
+/// Map iterator adapter.
+///
+/// This transforms each element into a new object.
+pub struct Map<T, F> {
+    parent: T,
+    map: F,
 }
 
 /// Zip iterator adapter.
@@ -225,6 +247,18 @@ impl<'a, T: 'a + Sync + Send> Split for SliceSplitMut<'a, T> {
             SliceSplitMut(a),
             SliceSplitMut(b),
         )
+    }
+}
+
+impl<'a, T: 'a + Sync> ExactSizeSplitIterator for SliceSplit<'a, T> {
+    fn size(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'a, T: 'a + Sync + Send> ExactSizeSplitIterator for SliceSplitMut<'a, T> {
+    fn size(&self) -> usize {
+        self.0.len()
     }
 }
 
