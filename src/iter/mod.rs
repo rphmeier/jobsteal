@@ -1,4 +1,8 @@
 //! Parallel iterators.
+//!
+//! The `SplitIterator` trait handles parallel iteration,
+//! and the `Split` trait deals with items which can be the
+//! base of a SplitIterator.
 
 use std::iter::FromIterator;
 
@@ -8,6 +12,7 @@ mod collect;
 mod cost_mul;
 mod enumerate;
 mod filter;
+mod flat_map;
 mod map;
 mod zip;
 
@@ -49,6 +54,15 @@ pub trait SplitIterator: Sized {
         }
     }
 
+    /// Produce an iterator for each element, and then yield the elements of those iterators.
+    fn flat_map<U, F: Sync>(self, flat_map: F) -> FlatMap<Self, F>
+    where U: IntoIterator, F: Fn(Self::Item) -> U {
+        FlatMap {
+            parent: self,
+            flat_map: flat_map
+        }
+    }
+
     /// Map the items of this iterator to another type using the supplied function.
     fn map<F: Sync, U>(self, map: F) -> Map<Self, F> where F: Fn(Self::Item) -> U {
         Map {
@@ -83,7 +97,7 @@ pub trait SplitIterator: Sized {
     }
 
 
-    /// A lower and optional upper bound on the size of this iterator.
+    /// A lower bound and optional upper bound on the size of this iterator.
     fn size_hint(&self) -> (usize, Option<usize>) {
         (0, None)
     }
@@ -146,6 +160,15 @@ pub struct Enumerate<T> {
 pub struct Filter<T, F> {
     parent: T,
     pred: F,
+}
+
+/// Flat Mapping iterator adapter.
+///
+/// This produces an iterator for each item, and then yields the items of
+/// those iterators.
+pub struct FlatMap<T, F> {
+    parent: T,
+    flat_map: F,
 }
 
 /// Map iterator adapter.
@@ -278,6 +301,9 @@ impl<'a, T: 'a + Sync + Send> IntoSplitIterator for &'a mut Vec<T> {
 /// impl for `SplitIterator` for convenience, so if we didn't mask the type,
 /// there would be conflicting implementations of `SplitIterator` for `Zip`.
 /// This will be obsoleted when specialization becomes stable.
+///
+/// Numerous other iterator adapters also use this, but will all be cleared
+/// by specialization.
 pub struct Hide<T>(T);
 
 /// A split iterator over an immutable slice.
