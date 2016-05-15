@@ -25,7 +25,7 @@ where I::Item: Send, T: FromIterator<I::Item> + Combine + Send {
 
 fn collect_helper<I: SplitIterator, T>(base: I::Base, consumer: &I::Consumer, spawner: &Spawner) -> T
 where I::Item: Send, T: FromIterator<I::Item> + Combine + Send {
-    if let Some(idx) = base.should_split() {
+    if let Some(idx) = base.should_split(1.0) {
         let (b1, b2) = base.split(idx);
         let (t1, t2) =
             spawner.join(

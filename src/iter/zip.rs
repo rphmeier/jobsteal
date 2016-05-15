@@ -1,5 +1,7 @@
 use super::{Callback, Consumer, Hide, Split, SplitIterator, ExactSizeSplitIterator, Zip};
 
+const ZIP_MUL: f32 = 1.5;
+
 // Okay, the callback situation gets a little hairy with Zip...
 //
 // The idea is that a Zip which is a consumer is a Zip combining two
@@ -145,9 +147,9 @@ impl<A: IntoIterator, B: IntoIterator> IntoIterator for Hide<Zip<A, B>> {
 }
 
 impl<A: Split, B: Split> Split for Hide<Zip<A, B>> {
-    fn should_split(&self) -> Option<usize> {
+    fn should_split(&self, mul: f32) -> Option<usize> {
         let z = &self.0;
-        match (z.a.should_split(), z.a.should_split()) {
+        match (z.a.should_split(mul * ZIP_MUL), z.a.should_split(mul * ZIP_MUL)) {
             (Some(a), Some(b)) => {
                 Some(if a > b { b } else { a })
             }

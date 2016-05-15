@@ -93,7 +93,7 @@ pub trait SplitIterator: Sized {
 fn consume_helper<T: SplitIterator, F: Sync>(iter: (T::Base, &T::Consumer), spawner: &Spawner, f: &F)
 where F: Fn(T::Base, &T::Consumer) {
     let (base, consumer) = iter;
-    if let Some(idx) = base.should_split() {
+    if let Some(idx) = base.should_split(1.0) {
         let (b1, b2) = base.split(idx);
         spawner.join(
             |inner| consume_helper::<T, F>((b1, consumer), inner, f),
@@ -145,9 +145,20 @@ pub struct Zip<A, B> {
 
 /// Data which can be split in two at an index.
 pub trait Split: Send + IntoIterator {
-    /// Whether this should split, returning an index
-    /// which would be best.
-    fn should_split(&self) -> Option<usize>;
+    /// Whether this should split.
+    ///
+    /// This is given a multiplier, which tells you to treat the data
+    /// as "mul" times as large as it is. The reason for this is that
+    /// each iterator adapter makes producing an individual item more expensive.
+    /// As the cost of producing each item goes up, we want to split the data
+    /// into more parallelizable jobs so we can get better work distribution
+    /// across threads.
+    ///
+    /// For example, should_split(1.0) for slices returns Some only
+    /// when then length of the slice is over 4096. This means
+    /// that `should_split(2.0)` will return Some when the length
+    /// of the slice is over 2048.
+    fn should_split(&self, mul: f32) -> Option<usize>;
 
     /// Split the data at the specified index.
     /// Note that this may not always be the same as the index
@@ -262,9 +273,9 @@ impl<'a, T: 'a> IntoIterator for SliceSplitMut<'a, T> {
 }
 
 impl<'a, T: 'a + Sync> Split for SliceSplit<'a, T> {
-    fn should_split(&self) -> Option<usize> {
+    fn should_split(&self, mul: f32) -> Option<usize> {
         let len = self.0.len();
-        if len > 4096 { Some(len / 2) }
+        if (len as f32 *mul) > 4096.0 { Some(len / 2) }
         else { None }
     }
 
@@ -284,9 +295,9 @@ impl<'a, T: 'a + Sync> Split for SliceSplit<'a, T> {
 }
 
 impl<'a, T: 'a + Sync + Send> Split for SliceSplitMut<'a, T> {
-    fn should_split(&self) -> Option<usize> {
+    fn should_split(&self, mul: f32) -> Option<usize> {
         let len = self.0.len();
-        if len > 4096 { Some(len / 2) }
+        if (len as f32 * mul) > 4096.0 { Some(len / 2) }
         else { None }
     }
 

@@ -1,5 +1,7 @@
 use super::{Callback, Consumer, Enumerate, Hide, Split, SplitIterator, ExactSizeSplitIterator};
 
+const ENUMERATE_COST: f32 = 0.02;
+
 pub struct EnumerateConsumer<T>(T);
 
 impl<T: ExactSizeSplitIterator> SplitIterator for Enumerate<T> {
@@ -61,8 +63,8 @@ impl<T: IntoIterator> IntoIterator for Hide<Enumerate<T>> {
 }
 
 impl<T: Split> Split for Hide<Enumerate<T>> {
-    fn should_split(&self) -> Option<usize> {
-        self.0.parent.should_split()
+    fn should_split(&self, mul: f32) -> Option<usize> {
+        self.0.parent.should_split(mul + ENUMERATE_COST)
     }
 
     fn split(self, idx: usize) -> (Self, Self) {
