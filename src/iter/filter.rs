@@ -7,7 +7,9 @@ struct FilterCallback<C, F> {
 
 impl<Item, C: Callback<Item>, F> Callback<Item> for FilterCallback<C, F>
 where F: Fn(&Item) -> bool {
-    fn call<I: Iterator<Item=Item>>(self, iter: I) {
+    type Out = C::Out;
+
+    fn call<I: Iterator<Item=Item>>(self, iter: I) -> C::Out {
         self.cb.call(iter.filter(self.pred))
     }
 }
@@ -16,13 +18,13 @@ impl<In: IntoIterator, T: Consumer<In>, F: Sync> Consumer<In> for Filter<T, F>
 where F: Fn(&T::Item) -> bool {
     type Item = T::Item;
 
-    fn consume<C: Callback<Self::Item>>(&self, i: In, cb: C) {
+    fn consume<C: Callback<Self::Item>>(&self, i: In, cb: C) -> C::Out {
         let cb = FilterCallback {
             cb: cb,
             pred: &self.pred,
         };
 
-        self.parent.consume(i, cb);
+        self.parent.consume(i, cb)
     }
 }
 

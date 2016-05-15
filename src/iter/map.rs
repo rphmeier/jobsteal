@@ -7,8 +7,10 @@ struct MapCallback<C, F> {
 
 impl<Item, C: Callback<U>, F, U> Callback<Item> for MapCallback<C, F>
 where F: Fn(Item) -> U {
-    fn call<I: Iterator<Item=Item>>(self, iter: I) {
-        self.cb.call(iter.map(self.map));
+    type Out = C::Out;
+
+    fn call<I: Iterator<Item=Item>>(self, iter: I) -> C::Out {
+        self.cb.call(iter.map(self.map))
     }
 }
 
@@ -16,13 +18,13 @@ impl<In: IntoIterator, T, F: Sync, U> Consumer<In> for Map<T, F>
 where T: Consumer<In>, F: Fn(T::Item) -> U {
     type Item = U;
 
-    fn consume<C: Callback<U>>(&self, i: In, cb: C) {
+    fn consume<C: Callback<U>>(&self, i: In, cb: C) -> C::Out {
         let callback = MapCallback {
             cb: cb,
             map: &self.map,
         };
 
-        self.parent.consume(i, callback);
+        self.parent.consume(i, callback)
     }
 }
 

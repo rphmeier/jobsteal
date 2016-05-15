@@ -30,22 +30,24 @@ struct EnumerateCallback<C> {
 }
 
 impl<Item, C: Callback<(usize, Item)>> Callback<Item> for EnumerateCallback<C> {
-    fn call<I: Iterator<Item=Item>>(self, iter: I) {
+    type Out = C::Out;
+
+    fn call<I: Iterator<Item=Item>>(self, iter: I) -> C::Out {
         let off = self.off;
-        self.cb.call(iter.enumerate().map(|(i, x)| (i + off, x)));
+        self.cb.call(iter.enumerate().map(|(i, x)| (i + off, x)))
     }
 }
 
 impl<In: IntoIterator, T: Consumer<In>> Consumer<Hide<Enumerate<In>>> for EnumerateConsumer<T> {
     type Item = (usize, T::Item);
 
-    fn consume<C: Callback<Self::Item>>(&self, i: Hide<Enumerate<In>>, cb: C) {
+    fn consume<C: Callback<Self::Item>>(&self, i: Hide<Enumerate<In>>, cb: C) -> C::Out {
         let cb = EnumerateCallback {
             cb: cb,
             off: i.0.off,
         };
 
-        self.0.consume(i.0.parent, cb);
+        self.0.consume(i.0.parent, cb)
     }
 }
 

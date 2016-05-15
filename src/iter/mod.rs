@@ -1,9 +1,14 @@
+use std::iter::FromIterator;
+
 use super::Spawner;
 
+mod collect;
 mod enumerate;
 mod filter;
 mod map;
 mod zip;
+
+pub use self::collect::Combine;
 
 /// A parallel iterator which works by splitting the underlying data
 /// and sharing it between threads.
@@ -67,6 +72,17 @@ pub trait SplitIterator: Sized {
             cons.consume(base, f);
         }))
     }
+
+    /// Collect the items of this iterator into a combinable collection.
+    ///
+    /// Note that this works by repeatedly combining the results of `from_iter`,
+    /// so this will probably lead to more allocations than a single-threaded
+    /// iterator `collect`.
+    fn collect<T: Send>(self, spawner: &Spawner) -> T
+    where Self::Item: Send, T: FromIterator<Self::Item> + Combine + Send {
+        collect::collect(self, spawner)
+    }
+
 
     /// A lower and optional upper bound on the size of this iterator.
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -302,10 +318,14 @@ impl<'a, T: 'a + Sync + Send> ExactSizeSplitIterator for SliceSplitMut<'a, T> {
 }
 
 pub trait Callback<T>: Sized {
-    fn call<I: Iterator<Item=T>>(self, I);
+    type Out;
+
+    fn call<I: Iterator<Item=T>>(self, I) -> Self::Out;
 }
 
 impl<F, T> Callback<T> for F where F: FnMut(T) {
+    type Out = ();
+
     fn call<I: Iterator<Item=T>>(mut self, iter: I) {
         for i in iter {
             (self)(i)
@@ -319,13 +339,13 @@ pub trait Consumer<In: IntoIterator>: Sync {
     /// Consume the iterator, typically by passing it on to the
     /// parent consumer along with a callback which will receive
     /// a producer of items to transform.
-    fn consume<C: Callback<Self::Item>>(&self, i: In, cb: C);
+    fn consume<C: Callback<Self::Item>>(&self, i: In, cb: C) -> C::Out;
 }
 
 impl<In: IntoIterator> Consumer<In> for () {
     type Item = In::Item;
 
-    fn consume<C: Callback<Self::Item>>(&self, i: In, cb: C) {
+    fn consume<C: Callback<Self::Item>>(&self, i: In, cb: C) -> C::Out {
         cb.call(i.into_iter())
     }
 }

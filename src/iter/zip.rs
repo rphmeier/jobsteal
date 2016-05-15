@@ -36,7 +36,9 @@ struct ZipCallbackB<IterA, C> {
 impl<'a, ItemA, InB, ConsB: 'a, C> Callback<ItemA> for ZipCallbackA<'a, ConsB, InB, C>
 where ConsB: Consumer<InB>, InB: IntoIterator,
       C: Callback<(ItemA, ConsB::Item)> {
-    fn call<I: Iterator<Item=ItemA>>(self, iter: I) {
+    type Out = C::Out;
+
+    fn call<I: Iterator<Item=ItemA>>(self, iter: I) -> C::Out {
         // consume B's consumer with a new callback, which stores
         // the iterator we just received.
         let b_cb = ZipCallbackB {
@@ -44,17 +46,19 @@ where ConsB: Consumer<InB>, InB: IntoIterator,
             cb: self.cb,
         };
 
-        self.consumer_b.consume(self.in_b, b_cb);
+        self.consumer_b.consume(self.in_b, b_cb)
     }
 }
 
 impl<ItemA, IterA, C, ItemB> Callback<ItemB> for ZipCallbackB<IterA, C>
 where IterA: Iterator<Item=ItemA>, C: Callback<(ItemA, ItemB)> {
-    fn call<IterB: Iterator<Item=ItemB>>(self, iter_b: IterB) {
+    type Out = C::Out;
+
+    fn call<IterB: Iterator<Item=ItemB>>(self, iter_b: IterB) -> C::Out {
         // we are receiving an iterator for ItemB, and we are storing
         // an iterator for ItemB along with a callback expecting an
         // iterator of (ItemA, ItemB). Let's give it what it wants.
-        self.cb.call(self.iter.zip(iter_b));
+        self.cb.call(self.iter.zip(iter_b))
     }
 }
 
@@ -63,14 +67,14 @@ where A: Consumer<InA>, B: Consumer<InB>,
       InA: IntoIterator, InB: IntoIterator {
     type Item = (A::Item, B::Item);
 
-    fn consume<C: Callback<Self::Item>>(&self, i: Hide<Zip<InA, InB>>, cb: C) {
+    fn consume<C: Callback<Self::Item>>(&self, i: Hide<Zip<InA, InB>>, cb: C) -> C::Out {
         let a_cb = ZipCallbackA {
             consumer_b: &self.b,
             in_b: i.0.b,
             cb: cb,
         };
 
-        self.a.consume(i.0.a, a_cb);
+        self.a.consume(i.0.a, a_cb)
     }
 }
 
