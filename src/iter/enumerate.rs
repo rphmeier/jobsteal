@@ -79,3 +79,21 @@ impl<T: Split> Split for Hide<Enumerate<T>> {
         self.0.parent.size_hint()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ::{IntoSplitIterator, SplitIterator, pool_harness};
+
+    #[test]
+    fn enumerate_basics() {
+        pool_harness(|pool| {
+            let v: Vec<_> = (0..5000).map(|_| 0).collect();
+            let v2 = v.into_split_iter()
+                .enumerate()
+                .map(|(i, x)| i + x)
+                .collect::<Vec<_>>(&pool.spawner());
+
+            assert_eq!(v2, (0..5000).collect::<Vec<_>>());
+        });
+    }
+}
