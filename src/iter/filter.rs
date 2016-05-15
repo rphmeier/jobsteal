@@ -37,6 +37,12 @@ where F: Fn(&T::Item) -> bool{
 
         (b, Filter { parent: c, pred: self.pred })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (_, u) = self.parent.size_hint();
+
+        (0, u)
+    }
 }
 
 #[cfg(test)]

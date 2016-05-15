@@ -88,6 +88,34 @@ impl<A: SplitIterator, B: SplitIterator> SplitIterator for Zip<A, B> {
             Zip { a: a_c, b: b_c },
         )
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (l_a, u_a) = self.a.size_hint();
+        let (l_b, u_b) = self.b.size_hint();
+
+        let l = if l_a < l_b {
+            l_a
+        } else {
+            l_b
+        };
+
+        let u = match (u_a, u_b) {
+            (Some(a), Some(b)) => {
+                // take the lower of the two because Zip short circuits when one
+                // iterator runs out.
+                if a < b {
+                    Some(a)
+                } else {
+                    Some(b)
+                }
+            }
+
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            _ => None,
+        };
+
+        (l, u)
+    }
 }
 
 impl<A: ExactSizeSplitIterator, B: ExactSizeSplitIterator> ExactSizeSplitIterator for Zip<A, B> {

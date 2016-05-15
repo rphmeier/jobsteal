@@ -37,6 +37,10 @@ where F: Fn(T::Item) -> U {
 
         (b, Map { parent: c, map: self.map })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.parent.size_hint()
+    }
 }
 
 impl<T: ExactSizeSplitIterator, F: Sync> ExactSizeSplitIterator for Map<T, F>

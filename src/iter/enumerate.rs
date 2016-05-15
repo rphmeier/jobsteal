@@ -12,6 +12,10 @@ impl<T: ExactSizeSplitIterator> SplitIterator for Enumerate<T> {
 
         (Hide(Enumerate { parent: b, off: self.off }), EnumerateConsumer(c))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.parent.size_hint()
+    }
 }
 
 impl<T: ExactSizeSplitIterator> ExactSizeSplitIterator for Enumerate<T> {
@@ -67,5 +71,9 @@ impl<T: Split> Split for Hide<Enumerate<T>> {
             Hide(Enumerate { parent: a, off: base_off }),
             Hide(Enumerate { parent: b, off: base_off + idx }),
         )
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.parent.size_hint()
     }
 }

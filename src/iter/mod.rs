@@ -51,10 +51,10 @@ pub trait SplitIterator: Sized {
 
     /// Zip this iterator with another, combining their items
     /// in a tuple.
-    fn zip<B: SplitIterator>(self, other: B) -> Zip<Self, B> {
+    fn zip<B: IntoSplitIterator>(self, other: B) -> Zip<Self, B::SplitIter> {
         Zip {
             a: self,
-            b: other,
+            b: other.into_split_iter(),
         }
     }
 
@@ -66,6 +66,11 @@ pub trait SplitIterator: Sized {
         consume_helper::<Self, _>((base, &consumer), spawner, &(|base, cons| {
             cons.consume(base, f);
         }))
+    }
+
+    /// A lower and optional upper bound on the size of this iterator.
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, None)
     }
 }
 
@@ -84,11 +89,13 @@ where F: Fn(T::Base, &T::Consumer) {
 }
 
 /// An iterator for which the exact number of elements is known.
+///
+/// If this is implemented for an iterator,`size_hint` for that iterator
+/// must return a pair of the exact size.
 pub trait ExactSizeSplitIterator: SplitIterator {
     /// Get the number of elements in this iterator.
     fn size(&self) -> usize;
 }
-
 
 /// Enumerate iterator adapter
 pub struct Enumerate<T> {
@@ -130,6 +137,26 @@ pub trait Split: Send + IntoIterator {
     /// Note that this may not always be the same as the index
     /// you return from should_split.
     fn split(self, usize) -> (Self, Self);
+
+    /// A hint for the size of this data, containing
+    /// a known lower bound (potentially zero) and an optional upper bound.
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, None)
+    }
+}
+
+impl<T: Split> SplitIterator for T {
+    type Item = T::Item;
+    type Base = Self;
+    type Consumer = ();
+
+    fn destructure(self) -> (Self, ()) {
+        (self, ())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        Split::size_hint(self)
+    }
 }
 
 /// Things that can be turned into a `SplitIterator`.
@@ -232,6 +259,12 @@ impl<'a, T: 'a + Sync> Split for SliceSplit<'a, T> {
             SliceSplit(b),
         )
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.0.len();
+
+        (len, Some(len))
+    }
 }
 
 impl<'a, T: 'a + Sync + Send> Split for SliceSplitMut<'a, T> {
@@ -247,6 +280,12 @@ impl<'a, T: 'a + Sync + Send> Split for SliceSplitMut<'a, T> {
             SliceSplitMut(a),
             SliceSplitMut(b),
         )
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.0.len();
+
+        (len, Some(len))
     }
 }
 
@@ -288,16 +327,6 @@ impl<In: IntoIterator> Consumer<In> for () {
 
     fn consume<C: Callback<Self::Item>>(&self, i: In, cb: C) {
         cb.call(i.into_iter())
-    }
-}
-
-impl<T: Split> SplitIterator for T {
-    type Item = T::Item;
-    type Base = Self;
-    type Consumer = ();
-
-    fn destructure(self) -> (Self, ()) {
-        (self, ())
     }
 }
 
