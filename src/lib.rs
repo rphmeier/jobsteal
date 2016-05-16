@@ -1,12 +1,17 @@
-//! A work-stealing fork-join queue used to perform processors' work asynchronously.
-//! This is intended to be short-lived. Long running asynchronous tasks should use another method.
-//! For infinite loops, the longest-running of tasks, behavior will be as expected.
+//! A work-stealing fork-join thread pool used to perform work asynchronously.
+//! Tasks submitted are intended to be short-lived. Long running asynchronous tasks should use another method.
+//! This crate is fairly experimental and should be used with caution.
+
 extern crate rand;
 
 mod arena;
 mod job;
 mod queue;
 mod worker;
+
+pub mod iter;
+
+pub use iter::{IntoSplitIterator, Split, SplitIterator};
 
 use rand::{Rng, SeedableRng, thread_rng, XorShiftRng};
 
@@ -277,6 +282,7 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
         }
     }
     // if the worker for this thread panics,
+    // we should let the main thread know.
     let _guard = PanicGuard(tx.clone());
 
     match rx.recv() {
@@ -550,15 +556,16 @@ pub fn make_pool(n: usize) -> Result<Pool, Error> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::Pool;
-
-    fn pool_harness<F>(f: F) where F: Fn(&mut Pool) {
-        for i in 0..32 {
-            let mut pool = Pool::new(i).unwrap();
-            f(&mut pool);
-        }
+fn pool_harness<F>(f: F) where F: Fn(&mut Pool) {
+    for i in 0..32 {
+        let mut pool = Pool::new(i).unwrap();
+        f(&mut pool);
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pool_harness, Pool};
 
     #[test]
     fn creation_destruction() {
