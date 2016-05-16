@@ -8,6 +8,7 @@ use std::iter::FromIterator;
 
 use super::Spawner;
 
+pub mod all_any;
 pub mod collect;
 pub mod fold;
 
@@ -87,6 +88,18 @@ pub trait SplitIterator: Sized {
             a: self,
             b: other.into_split_iter(),
         }
+    }
+
+    /// Whether any of the elements fulfill the supplied predicate.
+    fn any<P: Sync>(self, spawner: &Spawner, pred: P) -> bool
+    where P: Fn(Self::Item) -> bool {
+        all_any::any(self, spawner, pred)
+    }
+
+    /// Whether all of the elements fulfill the supplied predicate.
+    fn all<P: Sync>(self, spawner: &Spawner, pred: P) -> bool
+    where P: Fn(Self::Item) -> bool {
+        all_any::all(self, spawner, pred)
     }
 
     /// Consume this iterator, performing an action for each item.

@@ -1,3 +1,7 @@
+//! Fold or reduce the items of a `SplitIterator` into one.
+//!
+//! This is usually done through addition or multiplication.
+
 use super::{Callback, Consumer, IntoSplitIterator, Split, SplitIterator};
 use ::Spawner;
 

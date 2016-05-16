@@ -1,3 +1,5 @@
+//! Collect SplitIterators into collections.
+
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 
