@@ -1,8 +1,31 @@
-//! Parallel iterators.
+//! Jobsteal's Parallel iterators.
 //!
 //! The `SplitIterator` trait handles parallel iteration,
 //! and the `Split` trait deals with items which can be the
 //! base of a SplitIterator.
+//!
+//! Using `SplitIterators`, we can write code that feels single-threaded
+//! and simple that actually gets dispatched optimally onto the thread pool.
+//!
+//! Here's an example where we take a list of 16000 numbers, filter it by
+//! whether they're even, and then perform an action for each one...in parallel!
+//!
+//! ```rust
+//! use jobsteal::{make_pool, IntoSplitIterator, SplitIterator};
+//!
+//! let mut pool = make_pool(4).unwrap();
+//!
+//! let v = (0..16000).collect::<Vec<_>>();
+//! v.into_split_iter()
+//!     .filter(|&x| x % 2 == 0) // only even numbers allowed!
+//!     .for_each(&pool.spawner(), |x| drop(x)); // do an action for each item!
+//! ```
+//!
+//! These `SplitIterator`s can be used almost exactly like Rust's normal iterators!
+//! The only difference is that when they're being "consumed" by something like
+//! `for_each`, `collect`, `fold`, or `any`, they take one of jobsteal's spawners
+//! as an argument. This allows them to distribute the work across the threads of
+//! the pool the spawner is a handle for.
 
 use std::iter::FromIterator;
 
@@ -26,6 +49,21 @@ pub use self::collect::Combine;
 ///
 /// Functions which consume the iterator will take a `&Spawner` as an argument,
 /// so that they can distribute their work in parallel.
+///
+/// These can be used almost exactly the same as Rust's regular `Iterators`,
+/// with adapters like `enumerate`, `map`, `filter`, and more along with
+/// consumers like `for_each` and `collect`.
+///
+/// This trait may seem complicated to implement, but fear not!
+/// It is automatically implemented for data which implements `Split`,
+/// which is a lot easier to implement.
+///
+/// `SplitIterator` only needs to be manually implemented by those who are
+/// trying to make their own adapters. Those individuals may want to look
+/// at the source of iterator adapters like `Map` and `Filter`. The good news
+/// is that all the `SplitIterator` adapers are implemented using only public
+/// and safe jobsteal code, so anybody can create their own. The bad news is
+/// that it does get fairly complex.
 pub trait SplitIterator: Sized {
     /// The item this iterator produces.
     type Item;
@@ -434,6 +472,10 @@ impl<'a, T: 'a + Sync + Send> ExactSizeSplitIterator for SliceSplitMut<'a, T> {
     }
 }
 
+/// A callback which takes an iterator of the given item type,
+/// processes it, and produces a result.
+///
+/// These are passed to `Consumer`s to lazily consume iterators.
 pub trait Callback<T>: Sized {
     type Out;
 
@@ -450,6 +492,9 @@ impl<F, T> Callback<T> for F where F: FnMut(T) {
     }
 }
 
+/// A consumer takes an `IntoIterator`, which is usually the
+/// `Base` of a `SplitIterator`, produces the desired iterator,
+/// and passes it to the callback given.
 pub trait Consumer<In: IntoIterator>: Sync {
     type Item;
 

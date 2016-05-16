@@ -1,5 +1,5 @@
 //! A work-stealing fork-join thread pool used to perform work asynchronously.
-//! This is intended to be short-lived. Long running asynchronous tasks should use another method.
+//! Tasks submitted are intended to be short-lived. Long running asynchronous tasks should use another method.
 //! This crate is fairly experimental and should be used with caution.
 
 extern crate rand;
