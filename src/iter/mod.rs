@@ -8,7 +8,9 @@ use std::iter::FromIterator;
 
 use super::Spawner;
 
-mod collect;
+pub mod collect;
+pub mod fold;
+
 mod cost_mul;
 mod enumerate;
 mod filter;
@@ -101,6 +103,19 @@ pub trait SplitIterator: Sized {
     fn collect<T: Send>(self, spawner: &Spawner) -> T
     where Self::Item: Send, T: FromIterator<Self::Item> + Combine + Send {
         collect::collect(self, spawner)
+    }
+
+    /// Fold the items of the iterator together with the given operation and
+    /// initial state.
+    ///
+    /// Note: For this to work in parallel, the implementation
+    /// assumes that the operation is commutative.
+    ///
+    /// There will not be any safety issues caused by non-commutative operations,
+    /// but there may be some incorrectness.
+    fn fold<F: Sync>(self, spawner: &Spawner, initial: Self::Item, folder: F) -> Self::Item
+    where F: fold::Folder<Self::Item>, Self::Item: Send {
+        fold::fold(self, spawner, initial, folder)
     }
 
 
