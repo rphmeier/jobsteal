@@ -1,4 +1,4 @@
-use super::{Callback, Consumer, Filter, Split, SplitIterator};
+use super::{Callback, Consumer, Filter, Split, Spliterator};
 
 const FILTER_COST: f32 = 0.05;
 
@@ -53,7 +53,7 @@ where F: Fn(&T::Item) -> bool {
     }
 }
 
-impl<T: SplitIterator, F: Sync> SplitIterator for Filter<T, F>
+impl<T: Spliterator, F: Sync> Spliterator for Filter<T, F>
 where F: Fn(&T::Item) -> bool{
     type Item = T::Item;
     type Base = FilterBase<T::Base>;
@@ -74,7 +74,7 @@ where F: Fn(&T::Item) -> bool{
 
 #[cfg(test)]
 mod tests {
-    use ::{SplitIterator, IntoSplitIterator, pool_harness};
+    use ::{Spliterator, IntoSpliterator, pool_harness};
 
     #[test]
     fn filter_basics() {

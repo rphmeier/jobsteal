@@ -1,17 +1,17 @@
 //! Jobsteal's Parallel iterators.
 //!
-//! The `SplitIterator` trait handles parallel iteration,
+//! The `Spliterator` trait handles parallel iteration,
 //! and the `Split` trait deals with items which can be the
-//! base of a SplitIterator.
+//! base of a Spliterator.
 //!
-//! Using `SplitIterators`, we can write code that feels single-threaded
+//! Using `Spliterators`, we can write code that feels single-threaded
 //! and simple that actually gets dispatched optimally onto the thread pool.
 //!
 //! Here's an example where we take a list of 16000 numbers, filter it by
 //! whether they're even, and then perform an action for each one...in parallel!
 //!
 //! ```rust
-//! use jobsteal::{make_pool, IntoSplitIterator, SplitIterator};
+//! use jobsteal::{make_pool, IntoSpliterator, Spliterator};
 //!
 //! let mut pool = make_pool(4).unwrap();
 //!
@@ -21,7 +21,7 @@
 //!     .for_each(&pool.spawner(), |x| drop(x)); // do an action for each item!
 //! ```
 //!
-//! These `SplitIterator`s can be used almost exactly like Rust's normal iterators!
+//! These `Spliterator`s can be used almost exactly like Rust's normal iterators!
 //! The only difference is that when they're being "consumed" by something like
 //! `for_each`, `collect`, `fold`, or `any`, they take one of jobsteal's spawners
 //! as an argument. This allows them to distribute the work across the threads of
@@ -58,13 +58,13 @@ pub use self::collect::Combine;
 /// It is automatically implemented for data which implements `Split`,
 /// which is a lot easier to implement.
 ///
-/// `SplitIterator` only needs to be manually implemented by those who are
+/// `Spliterator` only needs to be manually implemented by those who are
 /// trying to make their own adapters. Those individuals may want to look
 /// at the source of iterator adapters like `Map` and `Filter`. The good news
-/// is that all the `SplitIterator` adapers are implemented using only public
+/// is that all the `Spliterator` adapers are implemented using only public
 /// and safe jobsteal code, so anybody can create their own. The bad news is
 /// that it does get fairly complex.
-pub trait SplitIterator: Sized {
+pub trait Spliterator: Sized {
     /// The item this iterator produces.
     type Item;
 
@@ -80,7 +80,7 @@ pub trait SplitIterator: Sized {
     fn destructure(self) -> (Self::Base, Self::Consumer);
 
     /// Clone the items of this iterator to get owned copies.
-    fn cloned<'a, T: 'a + Clone>(self) -> Cloned<Self> where Self: SplitIterator<Item=&'a T> {
+    fn cloned<'a, T: 'a + Clone>(self) -> Cloned<Self> where Self: Spliterator<Item=&'a T> {
         Cloned {
             parent: self,
         }
@@ -121,7 +121,7 @@ pub trait SplitIterator: Sized {
 
     /// Zip this iterator with another, combining their items
     /// in a tuple.
-    fn zip<B: IntoSplitIterator>(self, other: B) -> Zip<Self, B::SplitIter> {
+    fn zip<B: IntoSpliterator>(self, other: B) -> Zip<Self, B::SplitIter> {
         Zip {
             a: self,
             b: other.into_split_iter(),
@@ -200,7 +200,7 @@ pub trait SplitIterator: Sized {
 }
 
 fn for_each_helper<T, F>(base: T::Base, consumer: &T::Consumer, spawner: &Spawner, f: &F)
-where T: SplitIterator, F: Sync + Fn(T::Item) {
+where T: Spliterator, F: Sync + Fn(T::Item) {
     if let Some(idx) = base.should_split(1.0) {
         let (b1, b2) = base.split(idx);
         spawner.join(
@@ -216,7 +216,7 @@ where T: SplitIterator, F: Sync + Fn(T::Item) {
 ///
 /// If this is implemented for an iterator,`size_hint` for that iterator
 /// must return a pair of the exact size.
-pub trait ExactSizeSplitIterator: SplitIterator {
+pub trait ExactSizeSpliterator: Spliterator {
     /// Get the number of elements in this iterator.
     fn size(&self) -> usize;
 }
@@ -307,7 +307,7 @@ pub trait Split: Send + IntoIterator {
     }
 }
 
-impl<T: Split> SplitIterator for T {
+impl<T: Split> Spliterator for T {
     type Item = T::Item;
     type Base = Self;
     type Consumer = ();
@@ -321,19 +321,19 @@ impl<T: Split> SplitIterator for T {
     }
 }
 
-/// Things that can be turned into a `SplitIterator`.
-pub trait IntoSplitIterator {
+/// Things that can be turned into a `Spliterator`.
+pub trait IntoSpliterator {
     /// The item the split iterator will produce.
     type Item;
 
     /// The iterator this will turn into.
-    type SplitIter: SplitIterator<Item=Self::Item>;
+    type SplitIter: Spliterator<Item=Self::Item>;
 
     fn into_split_iter(self) -> Self::SplitIter;
 }
 
-impl<T: SplitIterator> IntoSplitIterator for T {
-    type Item = <Self as SplitIterator>::Item;
+impl<T: Spliterator> IntoSpliterator for T {
+    type Item = <Self as Spliterator>::Item;
     type SplitIter = Self;
 
     fn into_split_iter(self) -> Self::SplitIter {
@@ -341,7 +341,7 @@ impl<T: SplitIterator> IntoSplitIterator for T {
     }
 }
 
-impl<'a, T: 'a + Sync> IntoSplitIterator for &'a [T] {
+impl<'a, T: 'a + Sync> IntoSpliterator for &'a [T] {
     type Item = &'a T;
     type SplitIter = SliceSplit<'a, T>;
 
@@ -350,7 +350,7 @@ impl<'a, T: 'a + Sync> IntoSplitIterator for &'a [T] {
     }
 }
 
-impl<'a, T: 'a + Sync + Send> IntoSplitIterator for &'a mut [T] {
+impl<'a, T: 'a + Sync + Send> IntoSpliterator for &'a mut [T] {
     type Item = &'a mut T;
     type SplitIter = SliceSplitMut<'a, T>;
 
@@ -359,7 +359,7 @@ impl<'a, T: 'a + Sync + Send> IntoSplitIterator for &'a mut [T] {
     }
 }
 
-impl<'a, T: 'a + Sync> IntoSplitIterator for &'a Vec<T> {
+impl<'a, T: 'a + Sync> IntoSpliterator for &'a Vec<T> {
     type Item = &'a T;
     type SplitIter = SliceSplit<'a, T>;
 
@@ -368,7 +368,7 @@ impl<'a, T: 'a + Sync> IntoSplitIterator for &'a Vec<T> {
     }
 }
 
-impl<'a, T: 'a + Sync + Send> IntoSplitIterator for &'a mut Vec<T> {
+impl<'a, T: 'a + Sync + Send> IntoSpliterator for &'a mut Vec<T> {
     type Item = &'a mut T;
     type SplitIter = SliceSplitMut<'a, T>;
 
@@ -379,11 +379,11 @@ impl<'a, T: 'a + Sync + Send> IntoSplitIterator for &'a mut Vec<T> {
 
 /// Used to mask data so that implementations don't conflict.
 ///
-/// Specifically, this is used in the implementation of `SplitIterator`
-/// for `Zip`, by hiding the base. This is because `SplitIterator` requires
+/// Specifically, this is used in the implementation of `Spliterator`
+/// for `Zip`, by hiding the base. This is because `Spliterator` requires
 /// that the base be `Split`. However, for `Split` types, there is a blanket
-/// impl for `SplitIterator` for convenience, so if we didn't mask the type,
-/// there would be conflicting implementations of `SplitIterator` for `Zip`.
+/// impl for `Spliterator` for convenience, so if we didn't mask the type,
+/// there would be conflicting implementations of `Spliterator` for `Zip`.
 /// This will be obsoleted when specialization becomes stable.
 ///
 /// Numerous other iterator adapters also use this, but will all be cleared
@@ -460,13 +460,13 @@ impl<'a, T: 'a + Sync + Send> Split for SliceSplitMut<'a, T> {
     }
 }
 
-impl<'a, T: 'a + Sync> ExactSizeSplitIterator for SliceSplit<'a, T> {
+impl<'a, T: 'a + Sync> ExactSizeSpliterator for SliceSplit<'a, T> {
     fn size(&self) -> usize {
         self.0.len()
     }
 }
 
-impl<'a, T: 'a + Sync + Send> ExactSizeSplitIterator for SliceSplitMut<'a, T> {
+impl<'a, T: 'a + Sync + Send> ExactSizeSpliterator for SliceSplitMut<'a, T> {
     fn size(&self) -> usize {
         self.0.len()
     }
@@ -493,7 +493,7 @@ impl<F, T> Callback<T> for F where F: FnMut(T) {
 }
 
 /// A consumer takes an `IntoIterator`, which is usually the
-/// `Base` of a `SplitIterator`, produces the desired iterator,
+/// `Base` of a `Spliterator`, produces the desired iterator,
 /// and passes it to the callback given.
 pub trait Consumer<In: IntoIterator>: Sync {
     type Item;
@@ -514,7 +514,7 @@ impl<In: IntoIterator> Consumer<In> for () {
 
 #[cfg(test)]
 mod tests {
-    use ::{pool_harness, IntoSplitIterator, SplitIterator};
+    use ::{pool_harness, IntoSpliterator, Spliterator};
 
     #[test]
     fn doubling() {

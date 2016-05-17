@@ -1,10 +1,10 @@
-use super::{Callback, Consumer, Enumerate, Hide, Split, SplitIterator, ExactSizeSplitIterator};
+use super::{Callback, Consumer, Enumerate, Hide, Split, Spliterator, ExactSizeSpliterator};
 
 const ENUMERATE_COST: f32 = 0.02;
 
 pub struct EnumerateConsumer<T>(T);
 
-impl<T: ExactSizeSplitIterator> SplitIterator for Enumerate<T> {
+impl<T: ExactSizeSpliterator> Spliterator for Enumerate<T> {
     type Item = (usize, T::Item);
     type Base = Hide<Enumerate<T::Base>>;
     type Consumer = EnumerateConsumer<T::Consumer>;
@@ -20,7 +20,7 @@ impl<T: ExactSizeSplitIterator> SplitIterator for Enumerate<T> {
     }
 }
 
-impl<T: ExactSizeSplitIterator> ExactSizeSplitIterator for Enumerate<T> {
+impl<T: ExactSizeSpliterator> ExactSizeSpliterator for Enumerate<T> {
     fn size(&self) -> usize {
         self.parent.size()
     }
@@ -84,7 +84,7 @@ impl<T: Split> Split for Hide<Enumerate<T>> {
 
 #[cfg(test)]
 mod tests {
-    use ::{IntoSplitIterator, SplitIterator, pool_harness};
+    use ::{IntoSpliterator, Spliterator, pool_harness};
 
     #[test]
     fn enumerate_basics() {

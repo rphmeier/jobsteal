@@ -1,4 +1,4 @@
-use super::{Callback, Consumer, CostMul, Hide, Split, SplitIterator, ExactSizeSplitIterator};
+use super::{Callback, Consumer, CostMul, Hide, Split, Spliterator, ExactSizeSpliterator};
 
 pub struct CostMulConsumer<T>(T);
 
@@ -39,7 +39,7 @@ impl<T: Split> Split for Hide<CostMul<T>> {
     }
 }
 
-impl<T: SplitIterator> SplitIterator for CostMul<T> {
+impl<T: Spliterator> Spliterator for CostMul<T> {
     type Item = T::Item;
     type Base = Hide<CostMul<T::Base>>;
     type Consumer = CostMulConsumer<T::Consumer>;
@@ -54,7 +54,7 @@ impl<T: SplitIterator> SplitIterator for CostMul<T> {
     }
 }
 
-impl<T: ExactSizeSplitIterator>  ExactSizeSplitIterator for CostMul<T> {
+impl<T: ExactSizeSpliterator>  ExactSizeSpliterator for CostMul<T> {
     fn size(&self) -> usize {
         self.parent.size()
     }

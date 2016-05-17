@@ -59,11 +59,11 @@ The spawner passed to the "scope" closure can be used to create more scopes -- a
 Each job function can have a spawner passed to it as well by spawning jobs with `Spawner::recurse`, so you can very easily split tasks recursively.
 Recursive work-splitting typically leads to much better work distribution between worker threads.
 
-However, it's much easier to submit jobs in order like we did in the above example. Jobsteal's `SplitIterator` lets us feel like we're doing that,
+However, it's much easier to submit jobs in order like we did in the above example. Jobsteal's `Spliterator` lets us feel like we're doing that,
 while actually splitting the work optimally between threads!
 Here's how:
 ```rust
-use jobsteal::{make_pool, IntoSplitIterator, SplitIterator};
+use jobsteal::{make_pool, IntoSpliterator, Spliterator};
 
 fn main() {
     let mut pool = make_pool(4).unwrap();
