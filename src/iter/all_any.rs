@@ -1,7 +1,7 @@
-//! Whether all or any of the elements in a `SplitIterator` fulfill a predicate.
+//! Whether all or any of the elements in a `Spliterator` fulfill a predicate.
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::{Callback, Consumer, IntoSplitIterator, Split, SplitIterator};
+use super::{Callback, Consumer, IntoSpliterator, Split, Spliterator};
 use Spawner;
 
 struct AnyCallback<'a, P: 'a> {
@@ -38,7 +38,7 @@ impl<'a, P: 'a, T> Callback<T> for AnyCallback<'a, P> where P: Fn(T) -> bool {
 
 /// Consumes the iterator, returning true if all elements fulfill the predicate
 /// and false otherwise.
-pub fn all<I: IntoSplitIterator, P: Sync>(iter: I, spawner: &Spawner, pred: P) -> bool
+pub fn all<I: IntoSpliterator, P: Sync>(iter: I, spawner: &Spawner, pred: P) -> bool
 where P: Fn(I::Item) -> bool {
     // all just asks if there are any that don't fulfill the predicate.
     // if the answer to that question is true, then not all of them do.
@@ -47,7 +47,7 @@ where P: Fn(I::Item) -> bool {
 
 /// Consumes the iterator, returning true if any element fulfills the predicate
 /// and false otherwise.
-pub fn any<I: IntoSplitIterator, P: Sync>(iter: I, spawner: &Spawner, pred: P) -> bool
+pub fn any<I: IntoSpliterator, P: Sync>(iter: I, spawner: &Spawner, pred: P) -> bool
 where P: Fn(I::Item) -> bool {
     let global = AtomicBool::new(false);
     let cb = AnyCallback {
@@ -60,7 +60,7 @@ where P: Fn(I::Item) -> bool {
     any_helper::<I::SplitIter, P>(base, &consumer, spawner, cb)
 }
 
-fn any_helper<I: SplitIterator, P>(base: I::Base, consumer: &I::Consumer, spawner: &Spawner, cb: AnyCallback<P>) -> bool
+fn any_helper<I: Spliterator, P>(base: I::Base, consumer: &I::Consumer, spawner: &Spawner, cb: AnyCallback<P>) -> bool
 where P: Sync + Fn(I::Item) -> bool {
     if let Some(idx) = base.should_split(1.0) {
         let (b1, b2) = base.split(idx);
@@ -80,7 +80,7 @@ where P: Sync + Fn(I::Item) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use ::{IntoSplitIterator, SplitIterator, pool_harness};
+    use ::{IntoSpliterator, Spliterator, pool_harness};
 
     #[test]
     fn any_even() {

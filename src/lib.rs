@@ -11,7 +11,7 @@ mod worker;
 
 pub mod iter;
 
-pub use iter::{IntoSplitIterator, Split, SplitIterator};
+pub use iter::{IntoSpliterator, Split, Spliterator};
 
 use rand::{Rng, SeedableRng, thread_rng, XorShiftRng};
 

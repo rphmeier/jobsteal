@@ -1,6 +1,6 @@
-use super::{Callback, Consumer, Hide, Split, SplitIterator, ExactSizeSplitIterator, Zip};
+use super::{Callback, Consumer, Hide, Split, Spliterator, ExactSizeSpliterator, Zip};
 
-const ZIP_MUL: f32 = 1.5;
+const ZIP_MUL: f32 = 1.2;
 
 // Okay, the callback situation gets a little hairy with Zip...
 //
@@ -80,7 +80,7 @@ where A: Consumer<InA>, B: Consumer<InB>,
     }
 }
 
-impl<A: SplitIterator, B: SplitIterator> SplitIterator for Zip<A, B> {
+impl<A: Spliterator, B: Spliterator> Spliterator for Zip<A, B> {
     type Item = (A::Item, B::Item);
     type Base = Hide<Zip<A::Base, B::Base>>;
     type Consumer = Zip<A::Consumer, B::Consumer>;
@@ -124,7 +124,7 @@ impl<A: SplitIterator, B: SplitIterator> SplitIterator for Zip<A, B> {
     }
 }
 
-impl<A: ExactSizeSplitIterator, B: ExactSizeSplitIterator> ExactSizeSplitIterator for Zip<A, B> {
+impl<A: ExactSizeSpliterator, B: ExactSizeSpliterator> ExactSizeSpliterator for Zip<A, B> {
     fn size(&self) -> usize {
         // take the smaller of the two sizes.
         let (a, b) = (self.a.size(), self.b.size());

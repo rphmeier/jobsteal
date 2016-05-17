@@ -1,4 +1,4 @@
-use super::{Callback, Cloned, Consumer, Map, Split, SplitIterator, ExactSizeSplitIterator};
+use super::{Callback, Cloned, Consumer, Map, Split, Spliterator, ExactSizeSpliterator};
 
 const MAP_COST: f32 = 0.05;
 
@@ -52,7 +52,7 @@ where T: Consumer<In>, F: Fn(T::Item) -> U {
     }
 }
 
-impl<T: SplitIterator, F: Sync, U> SplitIterator for Map<T, F>
+impl<T: Spliterator, F: Sync, U> Spliterator for Map<T, F>
 where F: Fn(T::Item) -> U {
     type Item = U;
     type Base = MapBase<T::Base>;
@@ -69,8 +69,8 @@ where F: Fn(T::Item) -> U {
     }
 }
 
-impl<T: ExactSizeSplitIterator, F: Sync> ExactSizeSplitIterator for Map<T, F>
-where Map<T, F>: SplitIterator {
+impl<T: ExactSizeSpliterator, F: Sync> ExactSizeSpliterator for Map<T, F>
+where Map<T, F>: Spliterator {
     fn size(&self) -> usize {
         self.parent.size()
     }
@@ -97,7 +97,7 @@ where T: Consumer<In, Item=(&'a U)> {
     }
 }
 
-impl<'a, T, U: Clone + 'a> SplitIterator for Cloned<T> where T: SplitIterator<Item=(&'a U)> {
+impl<'a, T, U: Clone + 'a> Spliterator for Cloned<T> where T: Spliterator<Item=(&'a U)> {
     type Item = U;
     type Base = MapBase<T::Base>;
     type Consumer = ClonedConsumer<T::Consumer>;

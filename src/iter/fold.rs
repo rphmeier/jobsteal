@@ -1,8 +1,8 @@
-//! Fold or reduce the items of a `SplitIterator` into one.
+//! Fold or reduce the items of a `Spliterator` into one.
 //!
 //! This is usually done through addition or multiplication.
 
-use super::{Callback, Consumer, IntoSplitIterator, Split, SplitIterator};
+use super::{Callback, Consumer, IntoSpliterator, Split, Spliterator};
 use ::Spawner;
 
 /// Something which can "fold" two items together.
@@ -16,7 +16,7 @@ impl<T, F> Folder<T> for F where F: Fn(T, T) -> T {
     }
 }
 
-pub fn fold<I: IntoSplitIterator, F: Sync>(iter: I, spawner: &Spawner, initial: I::Item, folder: F) -> I::Item
+pub fn fold<I: IntoSpliterator, F: Sync>(iter: I, spawner: &Spawner, initial: I::Item, folder: F) -> I::Item
 where F: Folder<I::Item>, I::Item: Send {
     let (base, consumer) = iter.into_split_iter().destructure();
     match fold_helper::<I::SplitIter, F>(base, &consumer, spawner, &folder) {
@@ -26,7 +26,7 @@ where F: Folder<I::Item>, I::Item: Send {
 }
 
 fn fold_helper<I, F>(base: I::Base, consumer: &I::Consumer, spawner: &Spawner, folder: &F) -> Option<I::Item>
-where I: SplitIterator, F: Sync + Folder<I::Item>, I::Item: Send {
+where I: Spliterator, F: Sync + Folder<I::Item>, I::Item: Send {
     if let Some(idx) = base.should_split(1.0) {
         let (b1, b2) = base.split(idx);
 
@@ -67,7 +67,7 @@ where I: SplitIterator, F: Sync + Folder<I::Item>, I::Item: Send {
 
 #[cfg(test)]
 mod tests {
-    use ::{IntoSplitIterator, SplitIterator, pool_harness};
+    use ::{IntoSpliterator, Spliterator, pool_harness};
 
     #[test]
     fn fold_adding() {

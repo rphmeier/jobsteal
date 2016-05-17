@@ -1,9 +1,9 @@
-//! Collect SplitIterators into collections.
+//! Collect Spliterators into collections.
 
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 
-use super::{Callback, Consumer, IntoSplitIterator, Split, SplitIterator};
+use super::{Callback, Consumer, IntoSpliterator, Split, Spliterator};
 use Spawner;
 
 /// Items that can be combined with another of the same type.
@@ -14,18 +14,18 @@ pub trait Combine {
 
 /// Collect the elements of this iterator into a collection.
 ///
-/// This is more easily used through `SplitIterator::collect()`.
+/// This is more easily used through `Spliterator::collect()`.
 ///
 /// Note that this works by repeatedly combining the outputs of
 /// FromIterator, so it may lead to more allocations than anticipated.
-pub fn collect<I: IntoSplitIterator, T>(iter: I, spawner: &Spawner) -> T
+pub fn collect<I: IntoSpliterator, T>(iter: I, spawner: &Spawner) -> T
 where I::Item: Send, T: FromIterator<I::Item> + Combine + Send {
     let (base, consumer) = iter.into_split_iter().destructure();
 
     collect_helper::<I::SplitIter, T>(base, &consumer, spawner)
 }
 
-fn collect_helper<I: SplitIterator, T>(base: I::Base, consumer: &I::Consumer, spawner: &Spawner) -> T
+fn collect_helper<I: Spliterator, T>(base: I::Base, consumer: &I::Consumer, spawner: &Spawner) -> T
 where I::Item: Send, T: FromIterator<I::Item> + Combine + Send {
     if let Some(idx) = base.should_split(1.0) {
         let (b1, b2) = base.split(idx);
@@ -59,7 +59,7 @@ impl<T> Combine for Vec<T> {
 
 #[cfg(test)]
 mod tests {
-    use ::{IntoSplitIterator, SplitIterator, pool_harness};
+    use ::{IntoSpliterator, Spliterator, pool_harness};
 
     #[test]
     fn collect_basics() {

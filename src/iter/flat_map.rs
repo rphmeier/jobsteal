@@ -1,4 +1,4 @@
-use super::{Callback, Consumer, FlatMap, Split, SplitIterator};
+use super::{Callback, Consumer, FlatMap, Split, Spliterator};
 
 const FLAT_MAP_MUL: f32 = 1.5;
 
@@ -25,7 +25,7 @@ impl<T: Split> Split for FlatMapBase<T> {
     }
 }
 
-impl<T: SplitIterator, F, U> SplitIterator for FlatMap<T, F>
+impl<T: Spliterator, F, U> Spliterator for FlatMap<T, F>
 where F: Sync + Fn(T::Item) -> U, U: IntoIterator {
     type Item = U::Item;
     type Base = FlatMapBase<T::Base>;
@@ -69,7 +69,7 @@ where F: Sync + Fn(T::Item) -> I, I: IntoIterator {
 
 #[cfg(test)]
 mod tests {
-    use ::{IntoSplitIterator, SplitIterator, pool_harness};
+    use ::{IntoSpliterator, Spliterator, pool_harness};
 
     #[test]
     fn flat_map_basics() {
