@@ -2,7 +2,7 @@
 
 A work-stealing fork-join threadpool written in Rust.
 This features low-level APIs to directly submit tasks to the pool,
-along with a high-level parallel iteration API called `SplitIterator`,
+along with a high-level parallel iteration API called `Spliterator`,
 which are very similar to Rust's Iterators.
 
 ## [See the Documentation](https://rphmeier.github.io/jobsteal/)
