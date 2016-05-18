@@ -30,7 +30,7 @@ impl Worker {
     }
     // pop a job from the worker's queue, or steal one from another queue.
     unsafe fn pop_or_steal(&self) -> Option<*mut Job> {
-        const ABORTS_BEFORE_BACKOFF: usize = 64;
+        const ABORTS_BEFORE_BACKOFF: usize = 32;
 
         if let Some(job) = self.queues[self.idx].pop() {
             return Some(job);
