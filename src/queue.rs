@@ -20,7 +20,7 @@ impl<T> Array<T> {
     // create a new array. requires that the given size is a power-of-two.
     unsafe fn new(size: usize) -> Self {
         debug_assert!(size.is_power_of_two());
-        
+
         let mut v = Vec::<T>::with_capacity(size);
         let ptr = v.as_mut_ptr();
         mem::forget(v);
@@ -30,17 +30,17 @@ impl<T> Array<T> {
             prev: None,
         }
     }
-    
+
     unsafe fn put(&self, off: isize, t: T) {
         let mask = self.mask();
         ptr::write(self.ptr.offset(off & mask), t);
     }
-    
+
     unsafe fn get(&self, off: isize) -> T {
         let mask = self.mask();
         ptr::read(self.ptr.offset(off & mask))
     }
-    
+
     // consume this array and allocate a new one with double the size.
     // we keep the old arrays around until the top-level one is dropped,
     // just in case threads load old versions of the array pointer.
@@ -49,27 +49,22 @@ impl<T> Array<T> {
     unsafe fn grow(self: Box<Self>, b: isize, t: isize) -> Box<Self> {
         // allocate a new array with double the size.
         let mut bigger = Box::new(Array::new(self.size * 2));
-        
+
         // copy over all the elements in use of the previous array.
         let mut i = t;
         while i != b {
             bigger.put(i, self.get(i));
             i = i.wrapping_add(1);
         }
-        
+
         // store the current array in the linked list of live arrays.
         bigger.prev = Some(self);
         bigger
     }
-    
+
     #[inline]
     fn mask(&self) -> isize {
         self.size as isize - 1
-    }
-    
-    // drop the cached arrays stored here.
-    unsafe fn cull(&mut self) {
-        self.prev.take();
     }
 }
 
@@ -78,18 +73,28 @@ impl<T> Drop for Array<T> {
         unsafe {
             drop(Vec::from_raw_parts(self.ptr, 0, self.size));
         }
-    }    
+    }
 }
 
 /// The result of a steal operation.
-pub enum Stolen<T> {
+pub enum Stolen {
     /// Aborted stealing for some spurious reason.
     /// Retrying may yield success.
     Abort,
     /// Empty queue.
     Empty,
     /// Returned upon success.
-    Success(T),
+    Success(*mut Job),
+}
+
+/// The result of a pop operation.
+pub enum Popped {
+    /// Aborted popping because we lost a race condition.
+    Abort,
+    /// Empty queue.
+    Empty,
+    /// Successful pop.
+    Success(*mut Job),
 }
 
 /// A double-ended job queue.
@@ -117,42 +122,42 @@ impl Queue {
     // owns this queue.
     pub unsafe fn push(&self, job: *mut Job) {
         assert!(!job.is_null(), "Attempted to push null job onto queue");
-        
+
         let b = self.bottom.load(Relaxed);
         let t = self.top.load(Acquire);
-        let mut a = self.buf.load(Relaxed); 
-        
+        let mut a = self.buf.load(Relaxed);
+
         // need to grow?
         if b.wrapping_sub(t) >= (*a).size as isize {
             a = Box::into_raw(Box::from_raw(a).grow(b, t));
             self.buf.store(a, Release);
         }
-        
+
         (*a).put(b, job);
         fence(Release);
         self.bottom.store(b.wrapping_add(1), Relaxed);
     }
 
     // steal a job from the public end of the queue.
-    pub fn steal(&self) -> Stolen<*mut Job> {
+    pub fn steal(&self) -> Stolen {
         let t = self.top.load(Acquire);
         fence(SeqCst); // top must be loaded before bottom.
         let b = self.bottom.load(Acquire);
-        
+
         let len = b.wrapping_sub(t);
         if len > 0 {
             // non-empty queue
             let a = self.buf.load(Acquire);
             let x = unsafe { (*a).get(t) };
-            
+
             // may be racing against other steals + a pop.
             // see if we won.
             if self.top.compare_and_swap(t, t.wrapping_add(1), SeqCst) == t {
                 // yep, we won.
                 Stolen::Success(x)
-            } else {            
+            } else {
                 // lost the race.
-                mem::forget(x);   
+                mem::forget(x);
                 Stolen::Abort
             }
         } else {
@@ -164,63 +169,58 @@ impl Queue {
     // pop a job from the private end of the queue.
     // this must be done from the thread which logically
     // owns this queue.
-    pub unsafe fn pop(&self) -> Option<*mut Job> {
+    pub unsafe fn pop(&self) -> Popped {
         {
             // try to perform an early return.
             let t = self.top.load(Relaxed);
             let b = self.bottom.load(Relaxed);
             let len = b.wrapping_sub(t);
             if len <= 0 {
-                return None
+                return Popped::Empty;
             }
         }
-        
+
         let b = self.bottom.load(Relaxed).wrapping_sub(1);
         let a = self.buf.load(Relaxed);
         self.bottom.store(b, Relaxed);
         fence(SeqCst); // the store to bottom must occur before the load of top.
         let t = self.top.load(Relaxed);
-        
+
         let len = b.wrapping_sub(t);
         if len >= 0 {
             // non-empty.
-            let mut x = Some((*a).get(b));
+            let x = (*a).get(b);
             if len == 0 {
                 // last element in the queue.
                 // see if we're racing against anything.
                 if self.top.compare_and_swap(t, t.wrapping_add(1), SeqCst) != t {
                     // lost. forget we ever read a value.
-                    mem::forget(x.take());
+                    mem::forget(x);
+                    // set the queue to a cononically empty state before
+                    // we return.
+                    self.bottom.store(b.wrapping_add(1), Relaxed);
+                    return Popped::Abort;
                 }
-                
+
                 // set the queue to a canonically empty state of t == b.
                 self.bottom.store(b.wrapping_add(1), Relaxed);
             }
-            x
+            Popped::Success(x)
         } else {
             // empty queue.
             self.bottom.store(b.wrapping_add(1), Relaxed);
-            None
+            Popped::Empty
         }
-    }
-    
-    // Cull excess memory which has been cached by the queue on the assumption
-    // that no pointers into that memory will be used from this point on.
-    // This should only be called when it can be proven that there are
-    // no pending jobs in the queue.
-    pub unsafe fn cull_memory(&self) {
-        let a = self.buf.load(Relaxed);
-        (*a).cull();
     }
 }
 
 impl Drop for Queue {
     fn drop(&mut self) {
-        let b = self.bottom.load(Relaxed);
-        let t = self.top.load(Relaxed);
-        
-        let a = unsafe { Box::from_raw(self.buf.load(Relaxed)) };
-        
+        let b = self.bottom.load(SeqCst);
+        let t = self.top.load(SeqCst);
+
+        let a = unsafe { Box::from_raw(self.buf.load(SeqCst)) };
+
         // to handle the corner case where b has wrapped but t hasn't yet.
         // no point really in dropping *mut Jobs, but this is future proofing for
         // if the type of the queue items is changed.

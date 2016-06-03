@@ -17,40 +17,18 @@ use rand::{Rng, SeedableRng, thread_rng, XorShiftRng};
 
 use self::arena::Arena;
 use self::queue::Queue;
-use self::worker::Worker;
+use self::worker::{SharedWorkerData, Worker};
 
 use std::io::Error;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
 const INITIAL_CAPACITY: usize = 256;
 
-// messages to workers.
-enum ToWorker {
-    Start, // start
-    Clear, // run all jobs to completion, then reset the pool.
-    Shutdown, // all workers are clear and no jobs are running. safe to tear down arenas and queues.
-}
-// messages to the leader from workers.
-enum ToLeader {
-    Cleared, // done clearing. will wait for start or shutdown
-    Panicked,
-}
-
 struct WorkerHandle {
-    tx: Sender<ToWorker>,
-    rx: Receiver<ToLeader>,
     thread: Option<thread::JoinHandle<()>>,
-}
-
-// Finite state machine for controlling workers.
-#[derive(Clone, Copy, PartialEq)]
-enum State {
-    Running, // running jobs normally. waiting for state change.
-    Paused, // paused, waiting for start or shutdown message.
 }
 
 /// A job spawner associated with a specific scope.
@@ -200,7 +178,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     /// use jobsteal::Spawner;
     /// fn main() {
     ///     // a simple quicksort
-    ///     fn quicksort<'a, 'b, T: Ord + Send>(data: &mut [T], spawner: &Spawner<'a, 'b>) {
+    ///     fn quicksort<T: Ord + Send>(data: &mut [T], spawner: &Spawner) {
     ///     	if data.len() <= 1 { return; }
     ///
     ///     	// partition the data.
@@ -234,7 +212,7 @@ impl<'pool, 'scope> Spawner<'pool, 'scope> {
     ///     let len = 1024;
     ///     let mut to_sort = (0..len).rev().collect::<Vec<_>>();
     ///
-    ///     let mut pool = jobsteal::make_pool(4).unwrap();
+    ///     let mut pool = jobsteal::make_pool(0).unwrap();
     ///     quicksort(&mut to_sort, &pool.spawner());
     ///
     ///     for pair in to_sort.windows(2) {
@@ -272,62 +250,12 @@ fn make_spawner<'a, 'b>(worker: &'a Worker, counter: *const AtomicUsize) -> Spaw
     }
 }
 
-fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
-    struct PanicGuard(Sender<ToLeader>);
-    impl Drop for PanicGuard {
-        fn drop(&mut self) {
-            if thread::panicking() {
-                let _ = self.0.send(ToLeader::Panicked);
-            }
-        }
+fn worker_main(worker: Worker) {
+    while !worker.should_shutdown() {
+        unsafe { worker.run_next(true) };
     }
-    // if the worker for this thread panics,
-    // we should let the main thread know.
-    let _guard = PanicGuard(tx.clone());
 
-    match rx.recv() {
-        Ok(ToWorker::Start) => {},
-        _ => unreachable!(),
-    };
-
-    let mut state = State::Running;
-    loop {
-        match state {
-            State::Running => {
-                match rx.try_recv() {
-                    Ok(ToWorker::Clear) => {
-                        worker.clear();
-                        tx.send(ToLeader::Cleared).expect("Pool hung up on worker");
-                        state = State::Paused;
-                    }
-                    Ok(_) => unreachable!(),
-                    Err(TryRecvError::Disconnected) => panic!("Pool hung up on worker"),
-                    _ => {}
-                }
-
-                unsafe { worker.run_next() }
-            }
-
-            State::Paused => {
-                if let Ok(msg) = rx.recv() {
-                    match msg {
-                        ToWorker::Start => {
-                            state = State::Running;
-                            continue;
-                        }
-
-                        ToWorker::Shutdown => {
-                            break;
-                        }
-
-                        _ => unreachable!(),
-                    }
-                } else {
-                    panic!("Pool hung up on worker");
-                }
-            }
-        }
-    }
+    worker.clear();
 }
 
 /// The work pool manages worker threads in a work-stealing fork-join thread pool.
@@ -340,7 +268,6 @@ fn worker_main(tx: Sender<ToLeader>, rx: Receiver<ToWorker>, worker: Worker) {
 pub struct Pool {
     workers: Vec<WorkerHandle>,
     local_worker: Worker,
-    state: State,
 }
 
 impl Pool {
@@ -352,56 +279,37 @@ impl Pool {
     /// `synchronize`.
     fn new(n: usize) -> Result<Self, Error> {
         // one extra queue and pool for the job system.
-        let queues = Arc::new((0..n + 1).map(|_| Queue::new()).collect::<Vec<_>>());
-        let arenas = Arc::new((0..n + 1).map(|_| Arena::new()).collect::<Vec<_>>());
+        let queues = (0..n + 1).map(|_| Queue::new()).collect::<Vec<_>>();
+        let arenas = (0..n + 1).map(|_| Arena::new()).collect::<Vec<_>>();
+        let shared_data = Arc::new(SharedWorkerData::new(queues, arenas));
         let mut workers = Vec::with_capacity(n);
 
         let mut rng = thread_rng();
         for i in 0..n {
-            let (work_send, work_recv) = channel();
-            let (lead_send, lead_recv) = channel();
-
             let worker = Worker::new(
-                queues.clone(),
-                arenas.clone(),
+                shared_data.clone(),
                 i + 1,
                 XorShiftRng::from_seed(rng.gen::<[u32; 4]>())
             );
 
             let builder = thread::Builder::new().name(format!("worker_{}", i));
-            let handle = try!(builder.spawn(move || worker_main(lead_send, work_recv, worker)));
+            let handle = try!(builder.spawn(move || worker_main(worker)));
 
             workers.push(WorkerHandle {
-                tx: work_send,
-                rx: lead_recv,
                 thread: Some(handle),
             });
         }
 
-        let mut pool = Pool {
+        let pool = Pool {
             workers: workers,
             local_worker: Worker::new(
-                queues,
-                arenas,
+                shared_data,
                 0,
                 XorShiftRng::from_seed(rng.gen::<[u32; 4]>())
             ),
-            state: State::Paused,
         };
 
-        pool.spin_up();
-
         Ok(pool)
-    }
-
-    /// Finish all current jobs which are queued, and synchronize the workers until
-    /// it's time to start again.
-    ///
-    /// If any of the threads have panicked, that panic
-    /// will be propagated to this thread. Until the next job is submitted,
-    /// workers will block, allowing other threads to have higher priority.
-    pub fn synchronize(&mut self) {
-        self.clear_all();
     }
 
     /// Create a new spawning scope for submitting jobs.
@@ -414,8 +322,6 @@ impl Pool {
         where F: 'new + FnOnce(&Spawner<'pool, 'new>) -> R,
               R: 'new,
     {
-        self.spin_up();
-
         self.local_worker.scope(f)
     }
 
@@ -455,18 +361,6 @@ impl Pool {
         self.spawner().submit(f);
     }
 
-    /// Spin up all the workers, in case they were in a paused
-    /// state.
-    pub fn spin_up(&mut self) {
-        if self.state != State::Running {
-            for worker in &self.workers {
-                worker.tx.send(ToWorker::Start).expect("Worker hung up on pool");
-            }
-
-            self.state = State::Running;
-        }
-    }
-
     /// Get the pool's spawner.
     ///
     /// This will initally only accept jobs which outive 'static,
@@ -475,72 +369,23 @@ impl Pool {
     pub fn spawner<'a>(&'a mut self) -> Spawner<'a, 'static> {
         use std::ptr;
 
-        self.spin_up();
         make_spawner(&self.local_worker, ptr::null_mut())
-    }
-
-    // clear all the workers and sets the state to paused.
-    fn clear_all(&mut self) {
-        if self.state == State::Paused {
-            return;
-        }
-        // send every worker a clear message
-        for worker in &self.workers {
-            worker.tx.send(ToWorker::Clear).ok().expect("Worker hung up on pool.");
-        }
-
-        // do a clear run on the local worker as well.
-        self.local_worker.clear();
-
-        let mut panicked = false;
-        // wait for confirmation from each worker.
-        // the queues are not guaranteed to be empty until the last one responds!
-        for worker in &self.workers {
-            match worker.rx.recv() {
-                Ok(ToLeader::Panicked) => {
-                    panicked = true;
-                }
-
-                Err(_) => panic!("Worker hung up on job system."),
-                _ => {}
-            }
-        }
-
-        // cull all cached memory in the arenas and queues.
-        // at this point, we have received notice from all workers
-        // that they have stopped (either willingly or by panic),
-        // and that all jobs have been run.
-        for arena in self.local_worker.arenas().iter() {
-            unsafe { arena.cull_memory(); }
-        }
-
-        for queue in self.local_worker.queues().iter() {
-            unsafe { queue.cull_memory(); }
-        }
-
-        // cleared and panicked workers are waiting for a shutdown message.
-        if panicked {
-            panic!("Propagating worker thread panic")
-        }
-
-
-        self.state = State::Paused;
     }
 }
 
 impl Drop for Pool {
     fn drop(&mut self) {
-        // finish all work.
-        self.clear_all();
+        self.local_worker.shared_data().notify_shutdown();
+        self.local_worker.clear();
 
-        // now tell every worker they can shut down safely.
-        for worker in &self.workers {
-            worker.tx.send(ToWorker::Shutdown).ok().expect("Worker hung up on job system");
-        }
-
-        // join the threads (although they should already be at this point).
+        // join the threads to wait for all of them to shutdown
+        // properly. propagate panics here.
         for worker in &mut self.workers {
-            worker.thread.take().map(|handle| handle.join());
+            let handle = worker.thread.take().unwrap();
+
+            if handle.join().is_err() {
+                panic!("Propagating worker thread panic");
+            }
         }
     }
 }
@@ -602,15 +447,6 @@ mod tests {
 
                 assert_eq!(v, vec![1; 256]);
             }); // any other jobs would be forcibly joined here.
-        });
-    }
-
-    #[test]
-    fn multiple_synchronizations() {
-        pool_harness(|pool| {
-            for _ in 0..100 {
-                pool.synchronize();
-            }
         });
     }
 

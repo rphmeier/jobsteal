@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::UnsafeCell;
 use std::mem;
 
 use super::INITIAL_CAPACITY;
@@ -42,35 +42,25 @@ impl BufChain {
             prev: Some(Box::new(self)),
         }
     }
-
-    // "shrink" the chain by dropping all old vectors,
-    // and setting the length of the top-level vector to
-    // zero.
-    // This can only be done when there are no pointers
-    // to elements in the pool.
-    unsafe fn shrink(&mut self) {
-        self.prev.take();
-        self.buf.set_len(0);
-    }
 }
 
 // A pool allocator for jobs.
 pub struct Arena {
-    buf: RefCell<BufChain>,
+    buf: UnsafeCell<BufChain>,
 }
 
 impl Arena {
     pub fn new() -> Self {
         Arena {
-            buf: RefCell::new(BufChain::new(INITIAL_CAPACITY)),
+            buf: UnsafeCell::new(BufChain::new(INITIAL_CAPACITY)),
         }
     }
 
     // push a job onto the end of the pool and get a pointer to it.
-    // this may only be called from the thread which logically owns this pool.
+    // this may only be called from the thread which logically owns this arenas.
     pub unsafe fn alloc(&self, job: Job) -> *mut Job {
-        let mut buf = self.buf.borrow_mut();
-        match buf.alloc(job) {
+        let mut buf = self.buf.get();
+        match (*buf).alloc(job) {
             Ok(job_ptr) => job_ptr,
             Err(job) => {
                 // grow the buffer, replacing it with a temporary while we grow it.
@@ -78,27 +68,20 @@ impl Arena {
                 *buf = new_link;
 
                 // we just grew the buffer, so we are guaranteed to have capacity.
-                buf.alloc(job).ok().unwrap()
+                (*buf).alloc(job).ok().unwrap()
             }
         }
     }
 
     // gets the current top of the buffer.
-    pub fn top(&self) -> usize {
-        self.buf.borrow().buf.len()
+    // this can only be called from the thread which logically owns this arena.
+    pub unsafe fn top(&self) -> usize {
+        (*self.buf.get()).buf.len()
     }
 
     // sets the top of the buffer.
     pub unsafe fn set_top(&self, top: usize) {
-        self.buf.borrow_mut().buf.set_len(top);
-    }
-
-    // cull any cached memory on the assumption that there are no existing
-    // pointers to data in this pool.
-    // this function must only be called when it can be proven that
-    // all jobs allocated in this pool have already been run.
-    pub unsafe fn cull_memory(&self) {
-        self.buf.borrow_mut().shrink();
+        (*self.buf.get()).buf.set_len(top);
     }
 }
 
