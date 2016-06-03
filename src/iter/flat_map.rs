@@ -75,7 +75,7 @@ mod tests {
     fn flat_map_basics() {
         let v = (0..5000).collect::<Vec<_>>();
         pool_harness(|pool| {
-             let v2 = v.into_split_iter()
+             let v2 = (&v).into_split_iter()
                 .map(|&x| x)
                 .flat_map(::std::iter::once)
                 .collect::<Vec<_>>(&pool.spawner());
