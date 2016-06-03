@@ -1,3 +1,5 @@
+use crossbeam::sync::chase_lev::{self, Steal};
+
 use std::cell::{Cell, UnsafeCell};
 use std::sync::{Arc, Mutex, Condvar};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -5,28 +7,34 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use super::{Spawner, make_spawner};
 use super::arena::Arena;
 use super::job::Job;
-use super::queue::{Queue, Popped, Stolen};
 use super::rand::{Rng, XorShiftRng};
 
 // we use the 32nd bit from the right as an exit flag.
 const EXIT_FLAG: usize = 1 << 31;
 
+pub type Stealer = chase_lev::Stealer<*mut Job>;
+pub type Queue = chase_lev::Worker<*mut Job>;
+
 // data shared between workers.
 pub struct SharedWorkerData {
-    // all the workers' queues.
-    queues: Vec<Queue>,
+    // stealer handle for all worker queues.
+    queues: Vec<Stealer>,
     // all the workers' arenas.
     arenas: Vec<Arena>,
+    // how many jobs each worker has.
+    num_jobs: Vec<AtomicUsize>,
 
     with_work: Mutex<usize>,
     wait_condvar: Condvar,
 }
 
 impl SharedWorkerData {
-    pub fn new(queues: Vec<Queue>, arenas: Vec<Arena>) -> Self {
+    pub fn new(queues: Vec<Stealer>, arenas: Vec<Arena>) -> Self {
+        let len = queues.len();
         SharedWorkerData {
             queues: queues,
             arenas: arenas,
+            num_jobs: (0..len).map(|_| AtomicUsize::new(0)).collect(),
             with_work: Mutex::new(0),
             wait_condvar: Condvar::new(),
         }
@@ -36,6 +44,7 @@ impl SharedWorkerData {
     // more waiting around.
     pub fn notify_shutdown(&self) {
         *self.with_work.lock().unwrap() |= EXIT_FLAG;
+        self.wait_condvar.notify_all();
     }
 
     // let other workers know that some work exists.
@@ -44,12 +53,6 @@ impl SharedWorkerData {
         let mut with_work = self.with_work.lock().unwrap();
         *with_work += 1;
 
-        self.wait_condvar.notify_all();
-    }
-
-    // notify workers that there is some new work.
-    // this is for workers which already had even more work.
-    fn more_work_available(&self) {
         self.wait_condvar.notify_all();
     }
 
@@ -88,26 +91,33 @@ impl SharedWorkerData {
 // Each worker lives on a specific thread and manages a job queue and allocator.
 // When attempting to run jobs, it will first look in its own queue and then
 // attempt to steal from its siblings.
+//
+// there are a number of methods on this type which mandate that they only be used
+// from the thread which the worker logically "lives on". These methods will access fields
+// wrapped in UnsafeCells. If you're wondering why not have those methods require &mut self,
+// the reason is that Spawner must hold a reference to a worker, and Spawner must be passed
+// as a const reference to ensure that it isn't moved out of. Eventually, the UnsafeCells will be
+// punted into the spawner.
 pub struct Worker {
     shared_data: Arc<SharedWorkerData>,
     idx: usize, // the index of this worker's queue and pool in the Vec.
     rng: UnsafeCell<XorShiftRng>,
-    // whether this specific worker has any work.
-    has_work: Cell<bool>,
 
     // whether it's time to exit.
     exit_time: Cell<bool>,
+    // owned half of the queue.
+    queue: UnsafeCell<Queue>
 }
 
 impl Worker {
-    pub fn new(shared_data: Arc<SharedWorkerData>, idx: usize, rng: XorShiftRng)
+    pub fn new(shared_data: Arc<SharedWorkerData>, idx: usize, rng: XorShiftRng, queue: Queue)
     -> Self {
         Worker {
             shared_data: shared_data,
             idx: idx,
             rng: UnsafeCell::new(rng),
-            has_work: Cell::new(false),
             exit_time: Cell::new(false),
+            queue: UnsafeCell::new(queue),
         }
     }
 
@@ -115,7 +125,7 @@ impl Worker {
     unsafe fn steal(&self) -> Option<*mut Job> {
         const ABORTS_BEFORE_BACKOFF: usize = 32;
 
-        let idx = (*self.rng.get()).gen::<usize>() % self.queues().len();
+        let idx = (*self.rng.get()).gen::<usize>() % self.stealers().len();
 
         if idx != self.idx {
             let mut aborts = 0;
@@ -125,10 +135,14 @@ impl Worker {
                     return None;
                 }
 
-                match self.queues()[idx].steal() {
-                    Stolen::Success(job) => return Some(job),
-                    Stolen::Empty => return None,
-                    _ => {}
+                match self.stealers()[idx].steal() {
+                    Steal::Data(job) => {
+                        // stole a job, so decrement that worker's work counter.'
+                        self.shared_data.num_jobs[idx].fetch_sub(1, Ordering::SeqCst);
+                        return Some(job)
+                    }
+                    Steal::Empty => return None,
+                    Steal::Abort => {}
                 }
             }
         } else {
@@ -140,30 +154,29 @@ impl Worker {
     // were observed to be empty initially.
     fn clear_pass(&self) -> bool {
         let mut all_clear = true;
-        for (idx, queue) in self.queues().iter().enumerate() {
+        for (idx, queue) in self.stealers().iter().enumerate() {
             if idx != self.idx {
                 loop {
                     match queue.steal() {
-                        Stolen::Success(job) => {
+                        Steal::Data(job) => {
                             all_clear = false;
                             unsafe { (*job).call(self) }
                         }
-                        Stolen::Empty => break,
-                        Stolen::Abort => {
+                        Steal::Empty => break,
+                        Steal::Abort => {
                             all_clear = false;
                         }
                     }
                 }
             } else {
                 loop {
-                    match unsafe { queue.pop() } {
-                        Popped::Success(job) => {
+                    match unsafe { self.queue().try_pop() } {
+                        Some(job) => {
                             all_clear = false;
                             unsafe { (*job).call(self) }
                         }
-                        Popped::Empty => break,
-                        Popped::Abort => {
-                            all_clear = false;
+                        None => {
+                            break;
                         }
                     }
                 }
@@ -182,26 +195,25 @@ impl Worker {
     // wait for work to become available -- all workers running
     // out of work is a success condition.
     pub unsafe fn run_next(&self, should_wait: bool) {
+        let num_jobs = self.shared_data.num_jobs[self.idx].load(Ordering::SeqCst);
         // if we might have work, try and pop it off.
-        if self.has_work.get() {
-            match self.queues()[self.idx].pop() {
-                Popped::Success(job) => {
-                    (*job).call(self)
+        if num_jobs != 0 {
+            match self.queue().try_pop() {
+                Some(job) => {
+                    self.shared_data.num_jobs[self.idx].fetch_sub(1, Ordering::SeqCst);
+                    (*job).call(self);
+                    return;
                 }
 
-                Popped::Empty if should_wait => {
+                None => {
                     // we're out of work.
-                    // let everyone know.
-                    self.has_work.set(false);
+                    // let everyone know.'
                     self.shared_data.out_of_work();
                 }
-
-                // if it aborted, we can't say we're empty.
-                _ => {}
             }
         }
 
-        // wait for work
+        // wait for work. this will return instantly if someone has some.
         if should_wait && !self.exit_time.get() {
             if !self.shared_data.wait(self.idx) {
                 self.exit_time.set(true);
@@ -210,6 +222,7 @@ impl Worker {
             }
         }
 
+        // try and steal that work.
         if let Some(job) = self.steal() {
             (*job).call(self);
         }
@@ -219,17 +232,14 @@ impl Worker {
     pub unsafe fn submit_internal<F>(&self, counter: *const AtomicUsize, f: F)
         where F: Send + FnOnce(&Worker)
     {
-        if !self.has_work.get() {
-            self.has_work.set(true);
-            // let other threads know we have work.
+        let num_jobs = self.shared_data.num_jobs[self.idx].fetch_add(1, Ordering::SeqCst);
+        if num_jobs == 0 {
             self.shared_data.worker_has_work();
-        } else {
-            self.shared_data.more_work_available();
         }
 
         let job = Job::new(counter, f);
         let job_ptr = self.arenas()[self.idx].alloc(job);
-        self.queues()[self.idx].push(job_ptr);
+        self.queue().push(job_ptr);
     }
 
     // construct a new spawning scope.
@@ -291,9 +301,9 @@ impl Worker {
         self.exit_time.get()
     }
 
-    // gets a slice of all the workers' queues.
+    // gets a slice of all the workers' stealer handles
     #[inline]
-    pub fn queues(&self) -> &[Queue] {
+    pub fn stealers(&self) -> &[Stealer] {
         &self.shared_data.queues
     }
 
@@ -302,4 +312,13 @@ impl Worker {
     pub fn arenas(&self) -> &[Arena] {
         &self.shared_data.arenas
     }
+
+    // get a mutable reference to the queue.
+    // can only be done from the worker's owning thread
+    #[inline]
+    unsafe fn queue(&self) -> &mut Queue {
+        &mut *self.queue.get()
+    }
 }
+
+unsafe impl Send for Worker {}

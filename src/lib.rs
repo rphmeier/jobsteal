@@ -2,21 +2,22 @@
 //! Tasks submitted are intended to be short-lived. Long running asynchronous tasks should use another method.
 //! This crate is fairly experimental and should be used with caution.
 
+extern crate crossbeam;
 extern crate rand;
 
 mod arena;
 mod job;
-mod queue;
 mod worker;
 
 pub mod iter;
 
 pub use iter::{IntoSpliterator, Split, Spliterator};
 
+use crossbeam::sync::chase_lev::deque;
+
 use rand::{Rng, SeedableRng, thread_rng, XorShiftRng};
 
 use self::arena::Arena;
-use self::queue::Queue;
 use self::worker::{SharedWorkerData, Worker};
 
 use std::io::Error;
@@ -279,17 +280,39 @@ impl Pool {
     /// `synchronize`.
     fn new(n: usize) -> Result<Self, Error> {
         // one extra queue and pool for the job system.
-        let queues = (0..n + 1).map(|_| Queue::new()).collect::<Vec<_>>();
-        let arenas = (0..n + 1).map(|_| Arena::new()).collect::<Vec<_>>();
-        let shared_data = Arc::new(SharedWorkerData::new(queues, arenas));
-        let mut workers = Vec::with_capacity(n);
+        let (mut poppers, stealers) = {
+            let mut poppers = Vec::with_capacity(n + 1);
+            let mut stealers = Vec::with_capacity(n + 1);
+
+            for _ in 0..n+1 {
+                let (p, s) = deque();
+
+                poppers.push(p);
+                stealers.push(s);
+            }
+
+            (poppers.into_iter(), stealers)
+        };
 
         let mut rng = thread_rng();
-        for i in 0..n {
+
+        let arenas = (0..n + 1).map(|_| Arena::new()).collect::<Vec<_>>();
+        let shared_data = Arc::new(SharedWorkerData::new(stealers, arenas));
+        let mut workers = Vec::with_capacity(n);
+
+        let local_worker = Worker::new(
+            shared_data.clone(),
+            0,
+            XorShiftRng::from_seed(rng.gen::<[u32; 4]>()),
+            poppers.next().unwrap(),
+        );
+
+        for (i, pop) in (0..n).zip(poppers) {
             let worker = Worker::new(
                 shared_data.clone(),
                 i + 1,
-                XorShiftRng::from_seed(rng.gen::<[u32; 4]>())
+                XorShiftRng::from_seed(rng.gen::<[u32; 4]>()),
+                pop,
             );
 
             let builder = thread::Builder::new().name(format!("worker_{}", i));
@@ -302,11 +325,7 @@ impl Pool {
 
         let pool = Pool {
             workers: workers,
-            local_worker: Worker::new(
-                shared_data,
-                0,
-                XorShiftRng::from_seed(rng.gen::<[u32; 4]>())
-            ),
+            local_worker: local_worker,
         };
 
         Ok(pool)
