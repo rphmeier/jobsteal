@@ -40,6 +40,7 @@ mod enumerate;
 mod filter;
 mod flat_map;
 mod map;
+mod vec;
 mod zip;
 
 pub use self::collect::Combine;
