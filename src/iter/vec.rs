@@ -1,6 +1,6 @@
 //! Vector-related Spliterator.
 
-use super::{Split, IntoSpliterator};
+use super::{Split, ExactSizeSpliterator, IntoSpliterator};
 
 use std::sync::Arc;
 use std::ptr;
@@ -95,6 +95,12 @@ impl<T: Send> Split for VecSplit<T> {
     }
 }
 
+impl<T: Send> ExactSizeSpliterator for VecSplit<T> {
+	fn size(&self) -> usize {
+		self.len
+	}
+}
+
 impl<T: Send> IntoSpliterator for Vec<T> {
 	type Item = T;
 	type SplitIter = VecSplit<T>;
@@ -112,13 +118,15 @@ impl<T: Send> IntoSpliterator for Vec<T> {
 
 #[cfg(test)]
 mod tests {
-	use ::{IntoSpliterator, Spliterator};
+	use ::{IntoSpliterator, Spliterator, make_pool};
 
 	#[test]
 	fn it_works() {
-		let v: Vec<_> = (0..10000).collect();
-		let doubled: Vec<_> = v.into_split_iter().map(|x| x * 2).collect();
+		let mut pool = make_pool(4).unwrap();
 
-		assert_eq!(doubled, (0..10000).map(|x| x*2).collect());
+		let v: Vec<_> = (0..10000).collect();
+		let doubled: Vec<_> = v.into_split_iter().map(|x| x * 2).collect(&pool.spawner());
+
+		assert_eq!(doubled, (0..10000).map(|x| x*2).collect::<Vec<_>>());
 	}
 }

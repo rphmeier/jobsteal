@@ -87,7 +87,7 @@ mod tests {
         let v = (0..5000).map(|x| x * 2).collect::<Vec<_>>();
         pool_harness(|pool| {
 
-            let x = v.into_split_iter().cloned()
+            let x = (&v).into_split_iter().cloned()
                 .any(&pool.spawner(), |x| x % 2 == 0);
             assert!(x);
         })
@@ -98,7 +98,7 @@ mod tests {
         let v = (0..5000).map(|x| x * 2 + 1).collect::<Vec<_>>();
 
         pool_harness(|pool| {
-            let x = v.into_split_iter()
+            let x = (&v).into_split_iter()
                 .cloned()
                 .all(&pool.spawner(), |x| x % 2 == 0);
 

@@ -73,7 +73,7 @@ mod tests {
     fn fold_adding() {
         let v: Vec<_> = (0..10000).collect();
         pool_harness(|pool| {
-            let i = v.into_split_iter().cloned().fold(&pool.spawner(), 0, |a, b| a + b);
+            let i = (&v).into_split_iter().cloned().fold(&pool.spawner(), 0, |a, b| a + b);
             assert_eq!(i, 5000*9999); // n*(n-1)/2
         })
     }
