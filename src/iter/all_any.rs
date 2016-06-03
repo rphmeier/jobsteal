@@ -80,14 +80,14 @@ where P: Sync + Fn(I::Item) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use ::{IntoSpliterator, Spliterator, pool_harness};
+    use ::{BorrowSpliterator, Spliterator, pool_harness};
 
     #[test]
     fn any_even() {
         let v = (0..5000).map(|x| x * 2).collect::<Vec<_>>();
         pool_harness(|pool| {
 
-            let x = (&v).into_split_iter().cloned()
+            let x = v.split_iter().cloned()
                 .any(&pool.spawner(), |x| x % 2 == 0);
             assert!(x);
         })
@@ -98,7 +98,7 @@ mod tests {
         let v = (0..5000).map(|x| x * 2 + 1).collect::<Vec<_>>();
 
         pool_harness(|pool| {
-            let x = (&v).into_split_iter()
+            let x = v.split_iter()
                 .cloned()
                 .all(&pool.spawner(), |x| x % 2 == 0);
 

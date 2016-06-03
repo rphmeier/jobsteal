@@ -11,7 +11,7 @@ mod worker;
 
 pub mod iter;
 
-pub use iter::{IntoSpliterator, Split, Spliterator};
+pub use iter::{BorrowSpliterator, BorrowSpliteratorMut, IntoSpliterator, Split, Spliterator};
 
 use crossbeam::sync::chase_lev::deque;
 

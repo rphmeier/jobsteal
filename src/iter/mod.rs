@@ -342,6 +342,22 @@ impl<T: Spliterator> IntoSpliterator for T {
     }
 }
 
+/// Things that can have a `Spliterator` borrowed from them.
+pub trait BorrowSpliterator<'a> {
+    type Item: 'a;
+    type SplitIter: 'a + Spliterator<Item=Self::Item>;
+
+    fn split_iter(&'a self) -> Self::SplitIter;
+}
+
+/// Things that can have a `Spliterator` borrowed mutably from them.
+pub trait BorrowSpliteratorMut<'a> {
+    type Item: 'a;
+    type SplitIter: 'a + Spliterator<Item=Self::Item>;
+
+    fn split_iter_mut(&'a mut self) -> Self::SplitIter;
+}
+
 impl<'a, T: 'a + Sync> IntoSpliterator for &'a [T] {
     type Item = &'a T;
     type SplitIter = SliceSplit<'a, T>;
@@ -375,6 +391,24 @@ impl<'a, T: 'a + Sync + Send> IntoSpliterator for &'a mut Vec<T> {
 
     fn into_split_iter(self) -> Self::SplitIter {
         SliceSplitMut(self)
+    }
+}
+
+impl<'a, T: 'a + Sync> BorrowSpliterator<'a> for Vec<T> {
+    type Item = &'a T;
+    type SplitIter = SliceSplit<'a, T>;
+
+    fn split_iter(&'a self) -> Self::SplitIter {
+        SliceSplit(&*self)
+    }
+}
+
+impl<'a, T: 'a + Sync + Send> BorrowSpliteratorMut<'a> for Vec<T> {
+    type Item = &'a mut T;
+    type SplitIter = SliceSplitMut<'a, T>;
+
+    fn split_iter_mut(&'a mut self) -> Self::SplitIter {
+        SliceSplitMut(&mut *self)
     }
 }
 
