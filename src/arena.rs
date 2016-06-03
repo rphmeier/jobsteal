@@ -7,14 +7,14 @@ use super::job::Job;
 // a chain of vectors where jobs will be allocated in contiguous memory.
 struct BufChain {
     buf: Vec<Job>,
-    prev: Option<Box<BufChain>>,
+    _prev: Option<Box<BufChain>>,
 }
 
 impl BufChain {
     fn new(size: usize) -> Self {
         BufChain {
             buf: Vec::with_capacity(size),
-            prev: None,
+            _prev: None,
         }
     }
 
@@ -39,7 +39,7 @@ impl BufChain {
 
         BufChain {
             buf: Vec::with_capacity(new_size),
-            prev: Some(Box::new(self)),
+            _prev: Some(Box::new(self)),
         }
     }
 }
