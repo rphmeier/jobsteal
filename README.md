@@ -3,7 +3,7 @@
 A work-stealing fork-join threadpool written in Rust.
 This features low-level APIs to directly submit tasks to the pool,
 along with a high-level parallel iteration API called `Spliterator`,
-which are very similar to Rust's Iterators.
+which is very similar to Rust's Iterators.
 
 ## [See the Documentation](https://rphmeier.github.io/jobsteal/)
 
@@ -63,7 +63,7 @@ However, it's much easier to submit jobs in order like we did in the above examp
 while actually splitting the work optimally between threads!
 Here's how:
 ```rust
-use jobsteal::{make_pool, IntoSpliterator, Spliterator};
+use jobsteal::{make_pool, BorrowSpliteratorMut, Spliterator};
 
 fn main() {
     let mut pool = make_pool(4).unwrap();
@@ -73,7 +73,7 @@ fn main() {
     // iterate over the vector in parallel, incrementing each item by one.
     // the `for_each` function takes a spawner so it can dispatch jobs onto
     // the thread pool.
-    (&mut v).into_split_iter().for_each(&pool.spawner(), |i| *i += 1);
+    v.split_iter_mut().for_each(&pool.spawner(), |i| *i += 1);
 
     for i in v {
         assert_eq!(i, 1);
@@ -81,6 +81,6 @@ fn main() {
 }
 ```
 
-## Recover Safety
+## Unwind Safety
 A panic in one worker is intended to propagate to the main thread. However, the code hasn't been vetted for safety, so please try to avoid panicking in your jobs.
-There should probably be a RecoverSafe bound on job functions. This would require nightly, and RecoverSafe is also really cumbersome.
+There should probably be an UnwindSafe bound on job functions. This would require nightly, and UnwindSafe is also really cumbersome.
