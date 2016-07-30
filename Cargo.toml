@@ -1,6 +1,6 @@
 [package]
 name = "jobsteal"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["rphmeier <rphmeier@gmail.com>"]
 description = "A work-stealing fork-join threadpool written in Rust."
 documentation = "https://rphmeier.github.io/jobsteal/"
