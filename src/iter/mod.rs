@@ -280,7 +280,7 @@ pub struct CostMul<T> {
 }
 
 /// Data which can be split in two at an index.
-pub trait Split: Send + IntoIterator {
+pub trait Split: Sized + Send + IntoIterator {
     /// Whether this should split.
     ///
     /// This is given a multiplier, which tells you to treat the data
