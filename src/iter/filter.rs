@@ -54,7 +54,7 @@ where F: Fn(&T::Item) -> bool {
 }
 
 impl<T: Spliterator, F: Sync> Spliterator for Filter<T, F>
-where F: Fn(&T::Item) -> bool{
+where F: Fn(&T::Item) -> bool {
     type Item = T::Item;
     type Base = FilterBase<T::Base>;
     type Consumer = Filter<T::Consumer, F>;

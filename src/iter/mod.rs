@@ -38,6 +38,7 @@ pub mod fold;
 mod cost_mul;
 mod enumerate;
 mod filter;
+mod filter_map;
 mod flat_map;
 mod map;
 mod vec;
@@ -98,6 +99,14 @@ pub trait Spliterator: Sized {
     /// Filter items by some predicate.
     fn filter<F: Sync>(self, pred: F) -> Filter<Self, F> where F: Fn(&Self::Item) -> bool {
         Filter {
+            parent: self,
+            pred: pred,
+        }
+    }
+
+    /// Filter items by some predicate while mapping them to another type.
+    fn filter_map<U, F: Sync>(self, pred: F) -> FilterMap<Self, F> where F: Fn(Self::Item) -> Option<U> {
+        FilterMap {
             parent: self,
             pred: pred,
         }
@@ -222,6 +231,9 @@ pub trait ExactSizeSpliterator: Spliterator {
     fn size(&self) -> usize;
 }
 
+/// Cloning iterator adapter.
+///
+/// This transforms references to a `Clone` type into owned data.
 #[derive(Clone)]
 pub struct Cloned<T> {
     parent: T,
@@ -234,11 +246,20 @@ pub struct Enumerate<T> {
     off: usize,
 }
 
-/// Filter ilterator adapter.
+/// Filter iterator adapter.
 ///
 /// This filters each element by a given predicate.
 #[derive(Clone)]
 pub struct Filter<T, F> {
+    parent: T,
+    pred: F,
+}
+
+/// Filter-map iterator adapter.
+///
+/// This filters each element by a given predicate while mapping it to another type.
+#[derive(Clone)]
+pub struct FilterMap<T, F> {
     parent: T,
     pred: F,
 }
