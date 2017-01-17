@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `SliceSplit` struct in crate `jobsteal`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, SliceSplit">
+
+    <title>jobsteal::iter::SliceSplit - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../../main.css">
+    
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'><a href='../index.html'>jobsteal</a>::<wbr><a href='index.html'>iter</a></p><script>window.sidebarCurrent = {name: 'SliceSplit', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content struct">
+<h1 class='fqn'><span class='in-band'>Struct <a href='../index.html'>jobsteal</a>::<wbr><a href='index.html'>iter</a>::<wbr><a class='struct' href=''>SliceSplit</a></span><span class='out-of-band'><span id='render-detail'>
+                   <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                       [<span class='inner'>&#x2212;</span>]
+                   </a>
+               </span><a id='src-1141' class='srclink' href='../../src/jobsteal/src/iter/mod.rs.html#450' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct SliceSplit&lt;'a, T:&nbsp;'a&gt;(_);</pre><div class='docblock'><p>A split iterator over an immutable slice.</p>
+</div><h2 id='implementations'>Trait Implementations</h2><h3 class='impl'><span class='in-band'><code>impl&lt;'a, T:&nbsp;'a&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='core::clone::Clone'>Clone</a> for <a class='struct' href='../../jobsteal/iter/struct.SliceSplit.html' title='jobsteal::iter::SliceSplit'>SliceSplit</a>&lt;'a, T&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a id='src-1151' class='srclink' href='../../src/jobsteal/src/iter/mod.rs.html#455-459' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.clone' class='method'><span id='clone.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone' class='fnname'>clone</a>(&amp;self) -&gt; Self</code></span></h4>
+<div class='docblock'><p>Returns a copy of the value. <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Read more</a></p>
+</div><h4 id='method.clone_from' class='method'><span id='clone_from.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#method.clone_from' class='fnname'>clone_from</a>(&amp;mut self, source: &amp;Self)</code><div class='since' title='Stable since Rust version 1.0.0'>1.0.0</div></span></h4>
+<div class='docblock'><p>Performs copy-assignment from <code>source</code>. <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#method.clone_from">Read more</a></p>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;'a, T:&nbsp;'a&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/iter/traits/trait.IntoIterator.html' title='core::iter::traits::IntoIterator'>IntoIterator</a> for <a class='struct' href='../../jobsteal/iter/struct.SliceSplit.html' title='jobsteal::iter::SliceSplit'>SliceSplit</a>&lt;'a, T&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a id='src-1156' class='srclink' href='../../src/jobsteal/src/iter/mod.rs.html#461-466' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='associatedtype.Item' class='type'><span id='Item.t' class='invisible'><code>type <a href='https://doc.rust-lang.org/nightly/core/iter/traits/trait.IntoIterator.html#associatedtype.Item' class='type'>Item</a> = <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>&amp;'a [</a>T<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>]</a>::Item</code></span></h4>
+<div class='docblock'><p>The type of the elements being iterated over.</p>
+</div><h4 id='associatedtype.IntoIter' class='type'><span id='IntoIter.t' class='invisible'><code>type <a href='https://doc.rust-lang.org/nightly/core/iter/traits/trait.IntoIterator.html#associatedtype.IntoIter' class='type'>IntoIter</a> = <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>&amp;'a [</a>T<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>]</a>::IntoIter</code></span></h4>
+<div class='docblock'><p>Which kind of iterator are we turning this into?</p>
+</div><h4 id='method.into_iter' class='method'><span id='into_iter.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/iter/traits/trait.IntoIterator.html#tymethod.into_iter' class='fnname'>into_iter</a>(self) -&gt; Self::IntoIter</code></span></h4>
+<div class='docblock'><p>Creates an iterator from a value. <a href="https://doc.rust-lang.org/nightly/core/iter/traits/trait.IntoIterator.html#tymethod.into_iter">Read more</a></p>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;'a, T:&nbsp;'a + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a>&gt; <a class='trait' href='../../jobsteal/iter/trait.Split.html' title='jobsteal::iter::Split'>Split</a> for <a class='struct' href='../../jobsteal/iter/struct.SliceSplit.html' title='jobsteal::iter::SliceSplit'>SliceSplit</a>&lt;'a, T&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a id='src-1170' class='srclink' href='../../src/jobsteal/src/iter/mod.rs.html#475-495' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.should_split' class='method'><span id='should_split.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Split.html#tymethod.should_split' class='fnname'>should_split</a>(&amp;self, mul: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.f32.html'>f32</a>) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='core::option::Option'>Option</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a>&gt;</code></span></h4>
+<div class='docblock'><p>Whether this should split. <a href="../../jobsteal/iter/trait.Split.html#tymethod.should_split">Read more</a></p>
+</div><h4 id='method.split' class='method'><span id='split.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Split.html#tymethod.split' class='fnname'>split</a>(self, idx: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a>) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(</a>Self, Self<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>)</a></code></span></h4>
+<div class='docblock'><p>Split the data at the specified index. Note that this may not always be the same as the index you return from should_split. <a href="../../jobsteal/iter/trait.Split.html#tymethod.split">Read more</a></p>
+</div><h4 id='method.size_hint' class='method'><span id='size_hint.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Split.html#method.size_hint' class='fnname'>size_hint</a>(&amp;self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(</a><a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a>, <a class='enum' href='https://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='core::option::Option'>Option</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a>&gt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>)</a></code></span></h4>
+<div class='docblock'><p>A hint for the size of this data, containing a known lower bound (potentially zero) and an optional upper bound. <a href="../../jobsteal/iter/trait.Split.html#method.size_hint">Read more</a></p>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;'a, T:&nbsp;'a + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a>&gt; <a class='trait' href='../../jobsteal/iter/trait.ExactSizeSpliterator.html' title='jobsteal::iter::ExactSizeSpliterator'>ExactSizeSpliterator</a> for <a class='struct' href='../../jobsteal/iter/struct.SliceSplit.html' title='jobsteal::iter::SliceSplit'>SliceSplit</a>&lt;'a, T&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a id='src-1200' class='srclink' href='../../src/jobsteal/src/iter/mod.rs.html#519-523' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.size' class='method'><span id='size.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.ExactSizeSpliterator.html#tymethod.size' class='fnname'>size</a>(&amp;self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a></code></span></h4>
+<div class='docblock'><p>Get the number of elements in this iterator.</p>
+</div></div></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                    <dt>+</dt>
+                    <dd>Collapse/expand all sections</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code> or <code>* -> vec</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../../";
+        window.currentCrate = "jobsteal";
+    </script>
+    <script src="../../jquery.js"></script>
+    <script src="../../main.js"></script>
+    <script defer src="../../search-index.js"></script>
+</body>
+</html>

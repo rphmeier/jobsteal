@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `CostMul` struct in crate `jobsteal`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, CostMul">
+
+    <title>jobsteal::iter::CostMul - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../../main.css">
+    
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'><a href='../index.html'>jobsteal</a>::<wbr><a href='index.html'>iter</a></p><script>window.sidebarCurrent = {name: 'CostMul', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content struct">
+<h1 class='fqn'><span class='in-band'>Struct <a href='../index.html'>jobsteal</a>::<wbr><a href='index.html'>iter</a>::<wbr><a class='struct' href=''>CostMul</a></span><span class='out-of-band'><span id='render-detail'>
+                   <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                       [<span class='inner'>&#x2212;</span>]
+                   </a>
+               </span><a id='src-1445' class='srclink' href='../../src/jobsteal/src/iter/mod.rs.html#298-301' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct CostMul&lt;T&gt; { /* fields omitted */ }</pre><div class='docblock'><p>A cost multiplier.
+See the docs of <code>Split::with_cost_mul</code> for more.</p>
+</div><h2 id='implementations'>Trait Implementations</h2><h3 class='impl'><span class='in-band'><code>impl&lt;T:&nbsp;<a class='trait' href='../../jobsteal/iter/trait.Spliterator.html' title='jobsteal::iter::Spliterator'>Spliterator</a>&gt; <a class='trait' href='../../jobsteal/iter/trait.Spliterator.html' title='jobsteal::iter::Spliterator'>Spliterator</a> for <a class='struct' href='../../jobsteal/iter/struct.CostMul.html' title='jobsteal::iter::CostMul'>CostMul</a>&lt;T&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a id='src-421' class='srclink' href='../../src/jobsteal/src/iter/cost_mul.rs.html#42-55' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='associatedtype.Item' class='type'><span id='Item.t' class='invisible'><code>type <a href='../../jobsteal/iter/trait.Spliterator.html#associatedtype.Item' class='type'>Item</a> = T::Item</code></span></h4>
+<div class='docblock'><p>The item this iterator produces.</p>
+</div><h4 id='associatedtype.Base' class='type'><span id='Base.t' class='invisible'><code>type <a href='../../jobsteal/iter/trait.Spliterator.html#associatedtype.Base' class='type'>Base</a> = <a class='struct' href='../../jobsteal/iter/struct.Hide.html' title='jobsteal::iter::Hide'>Hide</a>&lt;<a class='struct' href='../../jobsteal/iter/struct.CostMul.html' title='jobsteal::iter::CostMul'>CostMul</a>&lt;T::Base&gt;&gt;</code></span></h4>
+<div class='docblock'><p>The splittable base data which this consists of.</p>
+</div><h4 id='associatedtype.Consumer' class='type'><span id='Consumer.t' class='invisible'><code>type <a href='../../jobsteal/iter/trait.Spliterator.html#associatedtype.Consumer' class='type'>Consumer</a> = CostMulConsumer&lt;T::Consumer&gt;</code></span></h4>
+<div class='docblock'><p>A consumer which can act as an ad-hoc iterator adapter chain while being shared across threads. <a href="../../jobsteal/iter/trait.Spliterator.html#associatedtype.Consumer">Read more</a></p>
+</div><h4 id='method.destructure' class='method'><span id='destructure.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#tymethod.destructure' class='fnname'>destructure</a>(self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(</a>Self::Base, Self::Consumer<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>)</a></code></span></h4>
+<div class='docblock'><p>Destructure this iterator into a splittable base and a shareable consumer of that base. <a href="../../jobsteal/iter/trait.Spliterator.html#tymethod.destructure">Read more</a></p>
+</div><h4 id='method.size_hint' class='method'><span id='size_hint.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.size_hint' class='fnname'>size_hint</a>(&amp;self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(</a><a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a>, <a class='enum' href='https://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='core::option::Option'>Option</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a>&gt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>)</a></code></span></h4>
+<div class='docblock'><p>A lower bound and optional upper bound on the size of this iterator.</p>
+</div><h4 id='method.cloned' class='method'><span id='cloned.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.cloned' class='fnname'>cloned</a>&lt;'a, T:&nbsp;'a + <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='core::clone::Clone'>Clone</a>&gt;(self) -&gt; <a class='struct' href='../../jobsteal/iter/struct.Cloned.html' title='jobsteal::iter::Cloned'>Cloned</a>&lt;Self&gt; <span class='where'>where Self: <a class='trait' href='../../jobsteal/iter/trait.Spliterator.html' title='jobsteal::iter::Spliterator'>Spliterator</a>&lt;Item=&amp;'a T&gt;</span></code></span></h4>
+<div class='docblock'><p>Clone the items of this iterator to get owned copies.</p>
+</div><h4 id='method.enumerate' class='method'><span id='enumerate.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.enumerate' class='fnname'>enumerate</a>(self) -&gt; <a class='struct' href='../../jobsteal/iter/struct.Enumerate.html' title='jobsteal::iter::Enumerate'>Enumerate</a>&lt;Self&gt;</code></span></h4>
+<div class='docblock'><p>Enumerate items by their index.</p>
+</div><h4 id='method.filter' class='method'><span id='filter.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.filter' class='fnname'>filter</a>&lt;F:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a>&gt;(self, pred: F) -&gt; <a class='struct' href='../../jobsteal/iter/struct.Filter.html' title='jobsteal::iter::Filter'>Filter</a>&lt;Self, F&gt; <span class='where'>where F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='core::ops::Fn'>Fn</a>(&amp;Self::Item) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a></span></code></span></h4>
+<div class='docblock'><p>Filter items by some predicate.</p>
+</div><h4 id='method.filter_map' class='method'><span id='filter_map.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.filter_map' class='fnname'>filter_map</a>&lt;U, F:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a>&gt;(self, pred: F) -&gt; <a class='struct' href='../../jobsteal/iter/struct.FilterMap.html' title='jobsteal::iter::FilterMap'>FilterMap</a>&lt;Self, F&gt; <span class='where'>where F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='core::ops::Fn'>Fn</a>(Self::Item) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='core::option::Option'>Option</a>&lt;U&gt;</span></code></span></h4>
+<div class='docblock'><p>Filter items by some predicate while mapping them to another type.</p>
+</div><h4 id='method.flat_map' class='method'><span id='flat_map.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.flat_map' class='fnname'>flat_map</a>&lt;U, F:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a>&gt;(self, flat_map: F) -&gt; <a class='struct' href='../../jobsteal/iter/struct.FlatMap.html' title='jobsteal::iter::FlatMap'>FlatMap</a>&lt;Self, F&gt; <span class='where'>where U: <a class='trait' href='https://doc.rust-lang.org/nightly/core/iter/traits/trait.IntoIterator.html' title='core::iter::traits::IntoIterator'>IntoIterator</a>, F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='core::ops::Fn'>Fn</a>(Self::Item) -&gt; U</span></code></span></h4>
+<div class='docblock'><p>Produce an iterator for each element, and then yield the elements of those iterators.</p>
+</div><h4 id='method.map' class='method'><span id='map.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.map' class='fnname'>map</a>&lt;F:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a>, U&gt;(self, map: F) -&gt; <a class='struct' href='../../jobsteal/iter/struct.Map.html' title='jobsteal::iter::Map'>Map</a>&lt;Self, F&gt; <span class='where'>where F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='core::ops::Fn'>Fn</a>(Self::Item) -&gt; U</span></code></span></h4>
+<div class='docblock'><p>Map the items of this iterator to another type using the supplied function.</p>
+</div><h4 id='method.zip' class='method'><span id='zip.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.zip' class='fnname'>zip</a>&lt;B:&nbsp;<a class='trait' href='../../jobsteal/iter/trait.IntoSpliterator.html' title='jobsteal::iter::IntoSpliterator'>IntoSpliterator</a>&gt;(self, other: B) -&gt; <a class='struct' href='../../jobsteal/iter/struct.Zip.html' title='jobsteal::iter::Zip'>Zip</a>&lt;Self, B::SplitIter&gt;</code></span></h4>
+<div class='docblock'><p>Zip this iterator with another, combining their items in a tuple. <a href="../../jobsteal/iter/trait.Spliterator.html#method.zip">Read more</a></p>
+</div><h4 id='method.any' class='method'><span id='any.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.any' class='fnname'>any</a>&lt;P:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a>&gt;(self, spawner: &amp;<a class='struct' href='../../jobsteal/struct.Spawner.html' title='jobsteal::Spawner'>Spawner</a>, pred: P) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a> <span class='where'>where P: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='core::ops::Fn'>Fn</a>(Self::Item) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a></span></code></span></h4>
+<div class='docblock'><p>Whether any of the elements fulfill the supplied predicate.</p>
+</div><h4 id='method.all' class='method'><span id='all.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.all' class='fnname'>all</a>&lt;P:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a>&gt;(self, spawner: &amp;<a class='struct' href='../../jobsteal/struct.Spawner.html' title='jobsteal::Spawner'>Spawner</a>, pred: P) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a> <span class='where'>where P: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='core::ops::Fn'>Fn</a>(Self::Item) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a></span></code></span></h4>
+<div class='docblock'><p>Whether all of the elements fulfill the supplied predicate.</p>
+</div><h4 id='method.for_each' class='method'><span id='for_each.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.for_each' class='fnname'>for_each</a>&lt;F&gt;(self, spawner: &amp;<a class='struct' href='../../jobsteal/struct.Spawner.html' title='jobsteal::Spawner'>Spawner</a>, f: F) <span class='where'>where F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='core::ops::Fn'>Fn</a>(Self::Item)</span></code></span></h4>
+<div class='docblock'><p>Consume this iterator, performing an action for each item.</p>
+</div><h4 id='method.collect' class='method'><span id='collect.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.collect' class='fnname'>collect</a>&lt;T:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='core::marker::Send'>Send</a>&gt;(self, spawner: &amp;<a class='struct' href='../../jobsteal/struct.Spawner.html' title='jobsteal::Spawner'>Spawner</a>) -&gt; T <span class='where'>where Self::Item: <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='core::marker::Send'>Send</a>, T: <a class='trait' href='https://doc.rust-lang.org/nightly/core/iter/traits/trait.FromIterator.html' title='core::iter::traits::FromIterator'>FromIterator</a>&lt;Self::Item&gt; + <a class='trait' href='../../jobsteal/iter/collect/trait.Combine.html' title='jobsteal::iter::collect::Combine'>Combine</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='core::marker::Send'>Send</a></span></code></span></h4>
+<div class='docblock'><p>Collect the items of this iterator into a combinable collection. <a href="../../jobsteal/iter/trait.Spliterator.html#method.collect">Read more</a></p>
+</div><h4 id='method.fold' class='method'><span id='fold.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.fold' class='fnname'>fold</a>&lt;F:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a>&gt;(self,<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; spawner: &amp;<a class='struct' href='../../jobsteal/struct.Spawner.html' title='jobsteal::Spawner'>Spawner</a>,<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; initial: Self::Item,<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; folder: F)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; -&gt; Self::Item <span class='where'>where F: <a class='trait' href='../../jobsteal/iter/fold/trait.Folder.html' title='jobsteal::iter::fold::Folder'>Folder</a>&lt;Self::Item&gt;, Self::Item: <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='core::marker::Send'>Send</a></span></code></span></h4>
+<div class='docblock'><p>Fold the items of the iterator together with the given operation and initial state. <a href="../../jobsteal/iter/trait.Spliterator.html#method.fold">Read more</a></p>
+</div><h4 id='method.with_cost_mul' class='method'><span id='with_cost_mul.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.Spliterator.html#method.with_cost_mul' class='fnname'>with_cost_mul</a>(self, mul: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.f32.html'>f32</a>) -&gt; <a class='struct' href='../../jobsteal/iter/struct.CostMul.html' title='jobsteal::iter::CostMul'>CostMul</a>&lt;Self&gt;</code></span></h4>
+<div class='docblock'><p>Uses a cost multiplier for this iterator. <a href="../../jobsteal/iter/trait.Spliterator.html#method.with_cost_mul">Read more</a></p>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;T:&nbsp;<a class='trait' href='../../jobsteal/iter/trait.ExactSizeSpliterator.html' title='jobsteal::iter::ExactSizeSpliterator'>ExactSizeSpliterator</a>&gt; <a class='trait' href='../../jobsteal/iter/trait.ExactSizeSpliterator.html' title='jobsteal::iter::ExactSizeSpliterator'>ExactSizeSpliterator</a> for <a class='struct' href='../../jobsteal/iter/struct.CostMul.html' title='jobsteal::iter::CostMul'>CostMul</a>&lt;T&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a id='src-432' class='srclink' href='../../src/jobsteal/src/iter/cost_mul.rs.html#57-61' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.size' class='method'><span id='size.v' class='invisible'><code>fn <a href='../../jobsteal/iter/trait.ExactSizeSpliterator.html#tymethod.size' class='fnname'>size</a>(&amp;self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a></code></span></h4>
+<div class='docblock'><p>Get the number of elements in this iterator.</p>
+</div></div><h3 class='impl'><span class='in-band'><code>impl&lt;T:&nbsp;<a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='core::clone::Clone'>Clone</a>&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html' title='core::clone::Clone'>Clone</a> for <a class='struct' href='../../jobsteal/iter/struct.CostMul.html' title='jobsteal::iter::CostMul'>CostMul</a>&lt;T&gt;</code></span><span class='out-of-band'><div class='ghost'></div><a id='src-1449' class='srclink' href='../../src/jobsteal/src/iter/mod.rs.html#297' title='goto source code'>[src]</a></span></h3>
+<div class='impl-items'><h4 id='method.clone' class='method'><span id='clone.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone' class='fnname'>clone</a>(&amp;self) -&gt; <a class='struct' href='../../jobsteal/iter/struct.CostMul.html' title='jobsteal::iter::CostMul'>CostMul</a>&lt;T&gt;</code></span></h4>
+<div class='docblock'><p>Returns a copy of the value. <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Read more</a></p>
+</div><h4 id='method.clone_from' class='method'><span id='clone_from.v' class='invisible'><code>fn <a href='https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#method.clone_from' class='fnname'>clone_from</a>(&amp;mut self, source: &amp;Self)</code><div class='since' title='Stable since Rust version 1.0.0'>1.0.0</div></span></h4>
+<div class='docblock'><p>Performs copy-assignment from <code>source</code>. <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#method.clone_from">Read more</a></p>
+</div></div></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                    <dt>+</dt>
+                    <dd>Collapse/expand all sections</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code> or <code>* -> vec</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../../";
+        window.currentCrate = "jobsteal";
+    </script>
+    <script src="../../jquery.js"></script>
+    <script src="../../main.js"></script>
+    <script defer src="../../search-index.js"></script>
+</body>
+</html>
