@@ -45,13 +45,12 @@ fn main(){
                 for i in chunk { *i += 1 }
             });
         }
-
-        for i in v {
-            assert_eq!(i, 1);
-        }
     });
     // all jobs within the scope are forced to complete before the scope function returns.
 
+    for i in v {
+        assert_eq!(i, 1);
+    }
 }
 ```
 
